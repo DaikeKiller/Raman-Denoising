@@ -38,13 +38,25 @@ class RamanGenerator:
             spectrum = np.zeros_like(x)
             N = len(U)  # Number of peaks
             for i in range(N):
-                spectrum += A[i] * pseudo_voigt(x, U[i], W[i])  # Add each peak to the spectrum
+                peak = pseudo_voigt(x, U[i], W[i])
+                peak_norm = peak / np.max(peak)
+                spectrum += A[i] * peak_norm  # Add each peak to the spectrum
             return spectrum
         
+        def generate_raman_baseline(x, A_baseline, U_baseline, W_baseline):
+            peak = pseudo_voigt(x, U_baseline, W_baseline)
+            peak_norm = peak / np.max(peak)
+            baseline = A_baseline * peak_norm
+            return baseline
+
         # Extract parameters
         peak_positions = params.get('peak_positions')
         amplitude = params.get('amplitude')
         FWHM = params.get('FWHM')
+        peak_position_baseline = params.get('peak_position_baseline')
+        amplitude_baseline = params.get('amplitude_baseline')
+        FWHM_baseline = params.get('FWHM_baseline')
+        baseline_flag = params.get('baseline_flag')
 
         if self.wvn is None:
             warnings.warn("No wavenumber data was input. Generating spectrum based on customized wavenumber.")
@@ -53,6 +65,11 @@ class RamanGenerator:
             self.wvn = np.linspace(spec_bound[0], spec_bound[1], (spec_bound[1]-spec_bound[0])*spec_resolution + 1)
 
         self.data = generate_raman_spectrum(self.wvn, amplitude, peak_positions, FWHM)
+
+        if baseline_flag is True:
+            baseline = generate_raman_baseline(self.wvn, amplitude_baseline, peak_position_baseline, FWHM_baseline)
+            self.data = self.data + baseline
+
         return
 
     def addNoise(self):
@@ -90,6 +107,12 @@ if __name__ == "__main__":
         # have a wavenumber as input, you can ignore those params ===
         'spectra_boundary': [100, 2000],
         'spectra_resolution': 1000,
+        # === Below is for adding a baseline, if you do not want to add
+        # a base line, you can set 'baseline_flag': False and ignore other params ===
+        'baseline_flag': True,
+        'peak_position_baseline': 1000,
+        'amplitude_baseline': 0.01,
+        'FWHM_baseline': 2000,
     }
 
     Generator = RamanGenerator()
