@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     # Plot the resulting Raman spectrum
     plt.plot(wvn, data, label='Simulated Raman Spectrum')
-    plt.xlabel('Raman Shift (cm$^{-1}$)')
+    plt.xlabel('Wavenumber (cm$^{-1}$)')
     plt.ylabel('Intensity')
     plt.title('Simulated Raman Spectrum with Pseudo-Voigt Function')
     plt.legend()
