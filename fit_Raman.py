@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
-from pseudo_Voiget import *
+from pseudo_Voiget import RamanGenerator
 
 # Define a fitting function using your RamanGenerator to model the spectrum
-def raman_model(x, *params):
+def raman_model(wvn, *params):
     N = len(params) // 3
     peak_positions = params[:N]
     FWHM = params[N:2*N]
@@ -24,7 +24,7 @@ def raman_model(x, *params):
     }
 
     # Generate the spectrum using RamanGenerator
-    generator = RamanGenerator(wvn=x)
+    generator = RamanGenerator(wvn=wvn)
     generator.generate(input_params)
     
     # Return the generated data
@@ -38,6 +38,7 @@ def fit_raman_spectrum(x, y, initial_guess):
 
 if __name__ == "__main__":
     target_data = None
+    wvn = None
 
     # Initial guess for fitting: (peak positions, FWHMs, amplitudes)
     initial_guess = [300, 800, 1200, 25, 30, 50, 0.1, 0.9, 0.05]
