@@ -3,7 +3,7 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks
 from scipy.io import loadmat
 import matplotlib.pyplot as plt
-from pseudo_Voiget import RamanGenerator
+from utils.pseudo_Voiget import RamanGenerator
 import warnings
 
 
