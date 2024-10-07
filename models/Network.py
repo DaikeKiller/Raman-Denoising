@@ -38,11 +38,8 @@ class RamanNoiseNet(nn.Module):
 
     def forward(self, x):
         x = self.conv_layers(x)
-        print(x.shape)
         x = self.attention(x)
-        print(x.shape)
         x = self.output_layer(x)
-        print(x.shape)
         return x
 
 if __name__ == "__main__":
