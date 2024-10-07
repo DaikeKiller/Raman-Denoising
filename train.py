@@ -4,7 +4,16 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from models.Network import RamanNoiseNet
 from utils.Raman_dataset import RamanNoiseDataset
+import pickle
+import numpy as np
 
+
+def read_data(clean_dir, noise=None):
+    with open(clean_dir, 'rb') as file:
+        concentrations, clean_data = pickle.load(file)
+    if noise is None:
+        noise = np.random.randn(1000, clean_data.shape[0])
+    return clean_data, noise, concentrations
 
 # Training Function
 def train_model(model, dataloader, criterion, optimizer, num_epochs, device):
@@ -40,6 +49,9 @@ if __name__ == "__main__":
     # Setup: device, hyperparameters, etc.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    dir = "data/generated/generated_skin_spectrum_10072024_173907.pkl"
+    SNR_range = [0, 5]
+
     # Hyperparameters
     num_epochs = 100
     batch_size = 16
@@ -50,14 +62,12 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    # Example data (replace with your real data)
-    num_samples = 100  # Number of samples
-    spectrum_length = 1000  # Length of each spectrum
-    noisy_signals = torch.randn(num_samples, spectrum_length)  # Random noisy signals
-    true_noises = torch.randn(num_samples, spectrum_length)    # Corresponding true noise signals
+    clean_signal, noise, concentrations = read_data(clean_dir=dir)
 
     # Create Dataset and DataLoader
-    dataset = RamanNoiseDataset(noisy_signals, true_noises)
+    dataset = RamanNoiseDataset(clean_signals=clean_signal, true_noises=noise)
+    dataset.generate_noisy_signals(SNR_range=SNR_range)
+    dataset.DCT()
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
