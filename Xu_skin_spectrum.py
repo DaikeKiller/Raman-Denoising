@@ -63,15 +63,16 @@ class SkinSimulator:
 
 
 if __name__ == "__main__":
-    basis = loadmat("data/basis_calibrated.mat")
+    basis = loadmat("data/basics/basis_calibrated.mat")
     basis = basis["basis"]
     given_concentrations = None
-    num_to_generate = 10 # if given_concentrations is provided, you can set this to None
+    num_to_generate = 10000 # if given_concentrations is provided, you can set this to None
     save_flag = True
     save_path = None # if this is None, the file will be saved to a default path "data/generated/"
 
     Generator = SkinSimulator(basis=basis)
     Generator.generate(concentrations=given_concentrations, nums=num_to_generate)
-    Generator.plot()
+    # Generator.plot()
 
     [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
+    print(spectrum.shape)
