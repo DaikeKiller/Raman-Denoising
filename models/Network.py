@@ -34,16 +34,46 @@ class RamanNoiseNet(nn.Module):
             nn.ReLU(),
         )
         self.attention = SelfAttention1D(in_channels=32)
-        self.output_layer = nn.Conv1d(32, 1, kernel_size=5, padding=2)
+        self.additional_convs = nn.Sequential(
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(64, 128, kernel_size=5, padding=2),
+            nn.ReLU()
+        )
+        
+        # MLP layers for complex feature mapping
+        self.mlp = nn.Sequential(
+            nn.Linear(128 * 1981, 512),  # Adjust size based on input length
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1981),  # Output back to original length
+        )
+        
+        # Final convolution layer to map back to the original single channel
+        self.output_layer = nn.Conv1d(1, 1, kernel_size=5, padding=2)
 
     def forward(self, x):
         x = self.conv_layers(x)
         x = self.attention(x)
+        x = self.additional_convs(x)
+        
+        # Flatten for the MLP layers
+        batch_size, channels, width = x.size()
+        x = x.view(batch_size, -1)
+        
+        # Pass through MLP layers
+        x = self.mlp(x)
+        
+        # Reshape back to (batch, channel, width) for final convolution
+        x = x.view(batch_size, 1, width)
         x = self.output_layer(x)
         return x
 
 if __name__ == "__main__":
-    length = 1000  # Example spectrum length
+    length = 1981  # Example spectrum length
     num = 100 # number of spectrum
     random_input = torch.randn(num, 1, length)  # Shape: (batch_size, channels, length)
 

@@ -76,21 +76,36 @@ def plot_signals(noisy_signals, cleaned_signals, test_signals, num_samples=5):
     plt.tight_layout()
     plt.show()
 
+    fig, axs = plt.subplots(num_samples, 1, figsize=(15, num_samples * 3))
+    for i, idx in enumerate(indices):
+        axs[i].plot(noisy_signals[idx] - test_signals[:,idx], label="Real Noise")
+        axs[i].plot(noisy_signals[idx] - cleaned_signals[idx], label="Predicted Noise", color='orange')
+        axs[i].plot(cleaned_signals[idx] - test_signals[:,idx], label="Difference", color='green')
+        # axs[i].set_title(f"Smaple {idx}")
+        axs[i].legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     test_dir = "data/generated/generated_skin_spectrum_10022024_104256.pkl"  # Test data
+    test_noise_dir = "data/noise/processed/test_data.pkl"
     SNR_range = [0, 5]
 
     # Load the best trained model
-    model_path = "models/pretrained/model_10082024_130046.pth"
+    model_path = "models/pretrained/model_10252024_151027.pth"
     model = RamanNoiseNet()
     model.load_state_dict(torch.load(model_path))
     model.eval()  # Set the model to evaluation mode
 
     # Load test data
-    test_signal, test_noise, test_concentrations = read_data(clean_dir=test_dir)
+    test_signal, _, test_concentrations = read_clean_data(clean_dir=test_dir, customized_noise=False)
+    with open(test_noise_dir, 'rb') as file:
+        test_noise = pickle.load(file)
 
     # Create Dataset and DataLoader
     test_dataset = RamanNoiseDataset(clean_signals=test_signal, true_noises=test_noise)

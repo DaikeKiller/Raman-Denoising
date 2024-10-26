@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from models.Network import RamanNoiseNet
 from utils.Raman_dataset import RamanNoiseDataset
 import pickle
@@ -10,14 +10,52 @@ import matplotlib.pyplot as plt
 import time
 import os
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+from scipy.signal import resample
 
 
-def read_data(clean_dir, noise=None):
+def read_clean_data(clean_dir, customized_noise=False):
     with open(clean_dir, 'rb') as file:
         concentrations, clean_data = pickle.load(file)
-    if noise is None:
-        noise = np.random.randn(1000, clean_data.shape[0])
-    return clean_data, noise, concentrations
+        # clean_data = resample(clean_data, 603, axis=0)
+    if customized_noise is True:
+        noise_data = np.random.randn(1000, clean_data.shape[0])
+    else:
+        noise_data = None
+    return clean_data, noise_data, concentrations
+
+def read_noise_data(root_folder):
+    # Step 1: Load .txt files data
+    txt_data = []
+    for file in os.listdir(root_folder):
+        if file.endswith('.txt'):
+            file_path = os.path.join(root_folder, file)
+            # Read the data from the file
+            with open(file_path, 'r') as f:
+                data = f.read().strip().split()  # Adjust based on file format
+                data = [float(x) for x in data]  # Convert to float (or int, based on data)
+                # data = data[421:]
+            power = np.mean([a ** 2 for a in data])
+            if power > 0:  # Avoid division by zero
+                data = data / np.sqrt(power)
+            txt_data.append(data)  # Add the data to the list
+    # Convert list of lists to a NumPy array
+    txt_array = np.array(txt_data, dtype=np.float64)
+    # Step 2: Split data into train, val, and test sets
+    train_data, temp_data = train_test_split(txt_array, test_size=0.2, random_state=42)
+    val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
+    # Step 3: Save the test data to a pickle file
+    test_pickle_file = os.path.join(root_folder, 'test_data.pkl')
+    with open(test_pickle_file, 'wb') as f:
+        pickle.dump(test_data, f)
+    # Return the train, val, and test sets
+    return train_data, val_data
+
+def reload_train_dataloader():
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)
+    train_dataset.generate_noisy_signals(SNR_range=SNR_range)
+    train_dataset.DCT()
+    return DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
 # Training Function
 def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, num_epochs, device, save_path):
@@ -28,6 +66,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
     best_val_loss = float('inf')
 
     for epoch in range(num_epochs):
+        if (epoch+1) % 5 == 0:
+            train_dataloader = reload_train_dataloader()
         model.train()
         running_loss = 0.0
 
@@ -85,12 +125,13 @@ if __name__ == "__main__":
 
     train_dir = "data/generated/generated_skin_spectrum_10072024_173907.pkl"
     val_dir = "data/generated/generated_skin_spectrum_10022024_104349.pkl"
+    noise_dir = "data/noise/processed"
     SNR_range = [0, 5]
 
     # Hyperparameters
-    num_epochs = 50
-    batch_size = 16
-    learning_rate = 0.003
+    num_epochs = 100
+    batch_size = 32
+    learning_rate = 0.002
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
     save_name = f"model_{timestamp}.pth"
@@ -101,8 +142,9 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    train_signal, train_noise, train_concentrations = read_data(clean_dir=train_dir)
-    val_signal, val_noise, val_concentrations = read_data(clean_dir=val_dir)
+    train_signal, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
+    val_signal, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
+    train_noise, val_noise = read_noise_data(noise_dir)
 
     # Create Dataset and DataLoader
     train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)

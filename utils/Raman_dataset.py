@@ -23,9 +23,10 @@ class RamanNoiseDataset(Dataset):
             idx = np.random.randint(0, num_of_noise)
             noise_tmp = self.true_noises[idx]
             noise_power = torch.mean(noise_tmp ** 2)
+            signal_power = torch.mean(signal ** 2)
             SNR = np.random.uniform(min_SNR, max_SNR)
-            factor = 10**(SNR / 10) * noise_power.item()
-            new_signal = factor * signal + noise_tmp
+            target_signal_power = 10**(SNR / 10) * noise_power.item()
+            new_signal = np.sqrt(target_signal_power) * (signal / np.sqrt(signal_power)) + noise_tmp
 
             self.noisy_signals.append(new_signal)
             self.noise_out.append(noise_tmp)
