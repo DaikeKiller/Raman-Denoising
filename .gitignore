@@ -2,4 +2,4 @@ __pycache__
 .git
 data
 .idea
-models/pretrained
+models/pretrained/*

@@ -4,9 +4,11 @@ import random
 
 
 # Function to test the model and clean the signals
-def test_model(model, test_dataloader, device):
-    model.to(device)
-    model.eval()  # Set the model to evaluation mode
+def test_model(model_HF, model_LF, test_dataloader, device):
+    model_HF.to(device)
+    model_HF.eval()  # Set the model to evaluation mode
+    model_LF.to(device)
+    model_LF.eval()  # Set the model to evaluation mode
     
     predicted_noises = []
     cleaned_signals = []
@@ -18,27 +20,36 @@ def test_model(model, test_dataloader, device):
         for noisy_signal, true_noise in tqdm(test_dataloader, desc="Testing", unit="batch"):
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
-            
-            # Predict noise using the trained model
-            predicted_noise = model(noisy_signal)
-            
-            # Perform inverse DCT on predicted noise
-            predicted_noise = predicted_noise.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            true_noise_np = true_noise.squeeze(1).cpu().numpy()
+
+            noisy_signal_HF = noisy_signal[:, :, 81:]
+            noisy_signal_LF = noisy_signal[:, :, :81]
+
+            predicted_noise_HF_residual = model_HF(noisy_signal_HF) 
+            predicted_noise_LF = model_LF(noisy_signal_LF)
+            predicted_noise_HF_residual = predicted_noise_HF_residual.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            predicted_noise_LF = predicted_noise_LF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+
+            noisy_signal_np = noisy_signal.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            predicted_noise_HF = noisy_signal_np[:, 81:] - predicted_noise_HF_residual
+            predicted_noise = np.concatenate((predicted_noise_LF, predicted_noise_HF), axis=1)
+
             idct_predicted_noise = idct(predicted_noise, type=2, norm='ortho', axis=1)
+            # idct_predicted_noise_power = np.mean(idct_predicted_noise ** 2, axis=1)
+            # idct_predicted_noise = idct_predicted_noise / np.sqrt(idct_predicted_noise_power[:, np.newaxis])
             
             # Subtract predicted noise from noisy signal to clean the signal
-            noisy_signal_np = noisy_signal.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
-            noisy_signal_np = idct(noisy_signal_np, type=2, norm='ortho', axis=1)
-            cleaned_signal = noisy_signal_np - idct_predicted_noise
+            idct_noisy_signal_np = idct(noisy_signal_np, type=2, norm='ortho', axis=1)
+            cleaned_signal = idct_noisy_signal_np - idct_predicted_noise
 
             true_noise_np = true_noise.squeeze(1).cpu().numpy()
-            true_noise_np = idct(true_noise_np, type=2, norm='ortho', axis=1)
+            idct_true_noise_np = idct(true_noise_np, type=2, norm='ortho', axis=1)
             
             # Store the results
             predicted_noises.append(idct_predicted_noise)
             cleaned_signals.append(cleaned_signal)
-            noisy_signals.append(noisy_signal_np)
-            true_noises.append(true_noise_np)
+            noisy_signals.append(idct_noisy_signal_np)
+            true_noises.append(idct_true_noise_np)
     
     # Concatenate results into numpy arrays
     predicted_noises = np.concatenate(predicted_noises, axis=0)
@@ -97,10 +108,14 @@ if __name__ == "__main__":
     SNR_range = [0, 5]
 
     # Load the best trained model
-    model_path = "models/pretrained/model_10252024_151027.pth"
-    model = RamanNoiseNet()
-    model.load_state_dict(torch.load(model_path))
-    model.eval()  # Set the model to evaluation mode
+    model_HF_path = "models/pretrained/model_10292024_090528_HF.pth"
+    model_HF = RamanNoiseNet_HF()
+    model_HF.load_state_dict(torch.load(model_HF_path))
+    model_HF.eval()  # Set the model to evaluation mode
+    model_LF_path = "models/pretrained/model_10282024_230802_LF.pth"
+    model_LF = RamanNoiseNet_LF()
+    model_LF.load_state_dict(torch.load(model_LF_path))
+    model_LF.eval()  # Set the model to evaluation mode
 
     # Load test data
     test_signal, _, test_concentrations = read_clean_data(clean_dir=test_dir, customized_noise=False)
@@ -114,7 +129,7 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    predicted_noises, cleaned_signals, noisy_signals, true_noise = test_model(model, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, true_noise = test_model(model_HF, model_LF, test_dataloader, device)
     print(noisy_signals.shape)
 
     plot_signals(noisy_signals, cleaned_signals, test_signal, num_samples=5)

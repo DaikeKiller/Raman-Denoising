@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from models.Network import RamanNoiseNet
+from models.Network import RamanNoiseNet, RamanNoiseNet_Clip, RamanNoiseNet_HF, RamanNoiseNet_LF
 from utils.Raman_dataset import RamanNoiseDataset
 import pickle
 import numpy as np
@@ -51,14 +51,26 @@ def read_noise_data(root_folder):
     # Return the train, val, and test sets
     return train_data, val_data
 
+def normalization(signal):
+    # Generate normalization factor tensor
+    # factor = [np.log(50*a) / (8*np.log(50)) for a in range(1, signal.shape[2]+1)]
+    factor = [0.01*a + 0.1 for a in range(1, signal.shape[2]+1)]
+    factor = np.array(factor)
+    factor = torch.from_numpy(np.reshape(factor, [1, 1, -1])).float()
+
+    # Move the factor to the same device as the signal
+    factor = factor.to(signal.device)
+    return signal * factor
+
 def reload_train_dataloader():
     train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)
     train_dataset.generate_noisy_signals(SNR_range=SNR_range)
     train_dataset.DCT()
+    print("-------- Reloaded Dataset ---------")
     return DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
 # Training Function
-def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, num_epochs, device, save_path):
+def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, num_epochs, device, save_path, clip="full"):
     model.to(device)
     
     train_losses = []
@@ -66,7 +78,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
     best_val_loss = float('inf')
 
     for epoch in range(num_epochs):
-        if (epoch+1) % 5 == 0:
+        if (epoch) % 5 == 0 and epoch != 0:
             train_dataloader = reload_train_dataloader()
         model.train()
         running_loss = 0.0
@@ -78,10 +90,23 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             true_noise = true_noise.unsqueeze(1).float().to(device)      # Shape: (batch_size, 1, length)
 
+            if clip == "high":
+                noisy_signal = noisy_signal[:,:,81:]
+                true_noise = true_noise[:,:,81:]
+                true_noise = noisy_signal - true_noise # for high frequency, we use residual learning
+            elif clip == "low":
+                noisy_signal = noisy_signal[:,:,:81]
+                true_noise = true_noise[:,:,:81]
+            elif clip != "full":
+                Warning("please input a valid string to the param *clip")
+
+            # true_noise = normalization(true_noise)
+
             optimizer.zero_grad()  # Zero the gradients
 
             # Forward pass
             outputs = model(noisy_signal)
+            # outputs = normalization(outputs)
             loss = criterion(outputs, true_noise)
 
             # Backward pass and optimization
@@ -99,8 +124,20 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             for noisy_signal, true_noise in val_dataloader:
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
                 true_noise = true_noise.unsqueeze(1).float().to(device)
+                if clip == "high":
+                    noisy_signal = noisy_signal[:,:,81:]
+                    true_noise = true_noise[:,:,81:]
+                    true_noise = noisy_signal - true_noise # for high frequency, we use residual learning
+                elif clip == "low":
+                    noisy_signal = noisy_signal[:,:,:81]
+                    true_noise = true_noise[:,:,:81]
+                elif clip != "full":
+                    Warning("please input a valid string to the param *clip")
+                
+                # true_noise = normalization(true_noise)
 
                 outputs = model(noisy_signal)
+                # outputs = normalization(outputs)
                 loss = criterion(outputs, true_noise)
 
                 running_val_loss += loss.item()
@@ -126,22 +163,29 @@ if __name__ == "__main__":
     train_dir = "data/generated/generated_skin_spectrum_10072024_173907.pkl"
     val_dir = "data/generated/generated_skin_spectrum_10022024_104349.pkl"
     noise_dir = "data/noise/processed"
-    SNR_range = [0, 5]
+    SNR_range = [-2, 2]
 
     # Hyperparameters
     num_epochs = 100
     batch_size = 32
-    learning_rate = 0.002
+    learning_rate_HF = 0.0002
+    learning_rate_LF = 0.0002
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
-    save_name = f"model_{timestamp}.pth"
-    save_path = os.path.join(save_dir, save_name)
+    save_name_HF = f"model_{timestamp}_HF.pth"
+    save_path_HF = os.path.join(save_dir, save_name_HF)
+    save_name_LF = f"model_{timestamp}_LF.pth"
+    save_path_LF = os.path.join(save_dir, save_name_LF)
 
     # Initialize model, loss function, and optimizer
-    model = RamanNoiseNet()
-    criterion = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
+    # model = RamanNoiseNet()
+    model_HF = RamanNoiseNet_HF()
+    criterion_HF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
+    optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
+    model_LF = RamanNoiseNet_LF()
+    criterion_LF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
+    optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF)
+    
     train_signal, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
     val_signal, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
     train_noise, val_noise = read_noise_data(noise_dir)
@@ -158,12 +202,23 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    train_loss, val_loss = train_model(model, train_dataloader, val_dataloader, criterion, optimizer, num_epochs, device, save_path)
+    train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
+    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
 
-    plt.plot(range(num_epochs), train_loss)
-    plt.plot(range(num_epochs), val_loss)
+    plt.figure
+    plt.subplot(2,1,1)
+    plt.plot(range(num_epochs), train_loss_HF)
+    plt.plot(range(num_epochs), val_loss_HF)
     plt.legend(["train loss", "validation loss"])
     plt.xlabel("epoch")
     plt.ylabel("loss")
-    plt.show()
+    plt.title("High Frequency")
+    # plt.subplot(2,1,2)
+    # plt.plot(range(num_epochs), train_loss_LF)
+    # plt.plot(range(num_epochs), val_loss_LF)
+    # plt.legend(["train loss", "validation loss"])
+    # plt.xlabel("epoch")
+    # plt.ylabel("loss")
+    # plt.title("Low Frequency")
+    # plt.show()
 
