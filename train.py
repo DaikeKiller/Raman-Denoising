@@ -97,6 +97,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             elif clip == "low":
                 noisy_signal = noisy_signal[:,:,:81]
                 true_noise = true_noise[:,:,:81]
+                true_noise = noisy_signal - true_noise
             elif clip != "full":
                 Warning("please input a valid string to the param *clip")
 
@@ -121,7 +122,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
         with torch.no_grad():  # Disable gradient calculation for validation
-            for noisy_signal, true_noise in val_dataloader:
+            for noisy_signal, true_noise, _ in val_dataloader:
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
                 true_noise = true_noise.unsqueeze(1).float().to(device)
                 if clip == "high":
@@ -131,6 +132,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 elif clip == "low":
                     noisy_signal = noisy_signal[:,:,:81]
                     true_noise = true_noise[:,:,:81]
+                    true_noise = noisy_signal - true_noise
                 elif clip != "full":
                     Warning("please input a valid string to the param *clip")
                 
@@ -184,7 +186,7 @@ if __name__ == "__main__":
     optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
     model_LF = RamanNoiseNet_LF()
     criterion_LF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
-    optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF)
+    optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF, weight_decay=0.01)
     
     train_signal, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
     val_signal, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)

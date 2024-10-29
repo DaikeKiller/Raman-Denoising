@@ -27,12 +27,13 @@ def test_model(model_HF, model_LF, test_dataloader, device):
             noisy_signal_LF = noisy_signal[:, :, :81]
 
             predicted_noise_HF_residual = model_HF(noisy_signal_HF) 
-            predicted_noise_LF = model_LF(noisy_signal_LF)
+            predicted_noise_LF_residual = model_LF(noisy_signal_LF)
             predicted_noise_HF_residual = predicted_noise_HF_residual.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
-            predicted_noise_LF = predicted_noise_LF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            predicted_noise_LF_residual = predicted_noise_LF_residual.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
 
             noisy_signal_np = noisy_signal.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
             predicted_noise_HF = noisy_signal_np[:, 81:] - predicted_noise_HF_residual
+            predicted_noise_LF = noisy_signal_np[:, :81] - predicted_noise_LF_residual
             predicted_noise = np.concatenate((predicted_noise_LF, predicted_noise_HF), axis=1)
 
             idct_predicted_noise = idct(predicted_noise, type=2, norm='ortho', axis=1)
@@ -112,11 +113,11 @@ if __name__ == "__main__":
     SNR_range = [-8, 0]
 
     # Load the best trained model
-    model_HF_path = "models/pretrained/model_10292024_090528_HF.pth"
+    model_HF_path = "models/pretrained/model_10292024_113727_HF.pth"
     model_HF = RamanNoiseNet_HF()
     model_HF.load_state_dict(torch.load(model_HF_path))
     model_HF.eval()  # Set the model to evaluation mode
-    model_LF_path = "models/pretrained/model_10282024_230802_LF.pth"
+    model_LF_path = "models/pretrained/model_10292024_113727_LF.pth"
     model_LF = RamanNoiseNet_LF()
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
