@@ -14,10 +14,11 @@ def test_model(model_HF, model_LF, test_dataloader, device):
     cleaned_signals = []
     noisy_signals = []
     true_noises = []
+    SNR_list = []
     
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
-        for noisy_signal, true_noise in tqdm(test_dataloader, desc="Testing", unit="batch"):
+        for noisy_signal, true_noise, SNR in tqdm(test_dataloader, desc="Testing", unit="batch"):
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             true_noise_np = true_noise.squeeze(1).cpu().numpy()
@@ -50,16 +51,18 @@ def test_model(model_HF, model_LF, test_dataloader, device):
             cleaned_signals.append(cleaned_signal)
             noisy_signals.append(idct_noisy_signal_np)
             true_noises.append(idct_true_noise_np)
+            SNR_list.append(SNR)
     
     # Concatenate results into numpy arrays
     predicted_noises = np.concatenate(predicted_noises, axis=0)
     cleaned_signals = np.concatenate(cleaned_signals, axis=0)
     noisy_signals = np.concatenate(noisy_signals, axis=0)
     true_noises = np.concatenate(true_noises, axis=0)
+    SNR_list = np.concatenate(SNR_list, axis=0)
     
-    return predicted_noises, cleaned_signals, noisy_signals, true_noises
+    return predicted_noises, cleaned_signals, noisy_signals, true_noises, SNR_list
 
-def plot_signals(noisy_signals, cleaned_signals, test_signals, num_samples=5):
+def plot_signals(noisy_signals, cleaned_signals, test_signals, SNR_List, num_samples=5):
     # Get the total number of signals
     total_signals = len(noisy_signals)
     
@@ -73,15 +76,16 @@ def plot_signals(noisy_signals, cleaned_signals, test_signals, num_samples=5):
     
     for i, idx in enumerate(indices):
         axs[i, 0].plot(noisy_signals[idx], label="Noisy Signal")
-        axs[i, 0].set_title(f"Noisy Signal {idx}")
+        axs[i, 0].set_title(f"Noisy Signal, SNR = {SNR_list[idx]:.2f}")
         axs[i, 0].legend()
 
-        axs[i, 1].plot(cleaned_signals[idx], label="Cleaned Signal", color='orange')
-        axs[i, 1].set_title(f"Cleaned Signal {idx}")
+        axs[i, 1].plot(cleaned_signals[idx], label="Cleaned Signal", color='green')
+        axs[i, 1].set_title(f"Cleaned Signal")
         axs[i, 1].legend()
 
-        axs[i, 2].plot(test_signals[:,idx], label="Test Signal", color='green')
-        axs[i, 2].set_title(f"Test Signal {idx}")
+        axs[i, 2].plot(test_signals[:,idx], label="Test True Signal", color='orange')
+        axs[i, 2].plot(test_signals[:,idx] - cleaned_signals[idx], label="Residual", color='black')
+        axs[i, 2].set_title(f"Test True Signal")
         axs[i, 2].legend()
 
     plt.tight_layout()
@@ -90,8 +94,8 @@ def plot_signals(noisy_signals, cleaned_signals, test_signals, num_samples=5):
     fig, axs = plt.subplots(num_samples, 1, figsize=(15, num_samples * 3))
     for i, idx in enumerate(indices):
         axs[i].plot(noisy_signals[idx] - test_signals[:,idx], label="Real Noise")
-        axs[i].plot(noisy_signals[idx] - cleaned_signals[idx], label="Predicted Noise", color='orange')
-        axs[i].plot(cleaned_signals[idx] - test_signals[:,idx], label="Difference", color='green')
+        axs[i].plot(noisy_signals[idx] - cleaned_signals[idx], label="Predicted Noise", color='green')
+        axs[i].plot(cleaned_signals[idx] - test_signals[:,idx], label="Difference", color='black')
         # axs[i].set_title(f"Smaple {idx}")
         axs[i].legend()
 
@@ -105,7 +109,7 @@ if __name__ == "__main__":
 
     test_dir = "data/generated/generated_skin_spectrum_10022024_104256.pkl"  # Test data
     test_noise_dir = "data/noise/processed/test_data.pkl"
-    SNR_range = [0, 5]
+    SNR_range = [-8, 0]
 
     # Load the best trained model
     model_HF_path = "models/pretrained/model_10292024_090528_HF.pth"
@@ -129,10 +133,10 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    predicted_noises, cleaned_signals, noisy_signals, true_noise = test_model(model_HF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, true_noise, SNR_list = test_model(model_HF, model_LF, test_dataloader, device)
     print(noisy_signals.shape)
 
-    plot_signals(noisy_signals, cleaned_signals, test_signal, num_samples=5)
+    plot_signals(noisy_signals, cleaned_signals, test_signal, SNR_list, num_samples=5)
 
     print("Testing complete. Results saved.")
 

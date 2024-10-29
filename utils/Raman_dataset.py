@@ -15,6 +15,7 @@ class RamanNoiseDataset(Dataset):
         self.true_noises = torch.from_numpy(true_noises)
         self.noisy_signals = []
         self.noise_out = []
+        self.SNR = []
     
     def generate_noisy_signals(self, SNR_range):
         min_SNR, max_SNR = SNR_range
@@ -30,6 +31,7 @@ class RamanNoiseDataset(Dataset):
 
             self.noisy_signals.append(new_signal)
             self.noise_out.append(noise_tmp)
+            self.SNR.append(SNR)
         return
     
     def DCT(self):
@@ -43,13 +45,13 @@ class RamanNoiseDataset(Dataset):
         return len(self.noisy_signals)
 
     def __getitem__(self, idx):
-        return self.noisy_signals_dct[idx], self.noise_out_dct[idx]
+        return self.noisy_signals_dct[idx], self.noise_out_dct[idx], self.SNR[idx]
 
 
 if __name__ == "__main__":
     num_samples = 100
     spectrum_length = 1000
-    SNR_range = [0, 5]
+    SNR_range = [-2, 2]
     clean_signals = np.random.randn(spectrum_length, num_samples) # the clean data is generated as shape(spectrum_length, num_samples)
     true_noises = np.random.randn(num_samples, spectrum_length)
     dataset = RamanNoiseDataset(clean_signals=clean_signals, true_noises=true_noises)

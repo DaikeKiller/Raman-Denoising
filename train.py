@@ -59,7 +59,7 @@ def normalization(signal):
     factor = torch.from_numpy(np.reshape(factor, [1, 1, -1])).float()
 
     # Move the factor to the same device as the signal
-    factor = factor.to(signal.device)
+    # factor = factor.to(signal.device)
     return signal * factor
 
 def reload_train_dataloader():
@@ -85,7 +85,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch+1}/{num_epochs} Training', unit="batch")
 
-        for noisy_signal, true_noise in progress_bar:
+        for noisy_signal, true_noise, _ in progress_bar:
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             true_noise = true_noise.unsqueeze(1).float().to(device)      # Shape: (batch_size, 1, length)
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     train_dir = "data/generated/generated_skin_spectrum_10072024_173907.pkl"
     val_dir = "data/generated/generated_skin_spectrum_10022024_104349.pkl"
     noise_dir = "data/noise/processed"
-    SNR_range = [-2, 2]
+    SNR_range = [-8, 0]
 
     # Hyperparameters
     num_epochs = 100
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
     # Train the model
     train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
-    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
+    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
 
     plt.figure
     plt.subplot(2,1,1)
@@ -213,12 +213,12 @@ if __name__ == "__main__":
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.title("High Frequency")
-    # plt.subplot(2,1,2)
-    # plt.plot(range(num_epochs), train_loss_LF)
-    # plt.plot(range(num_epochs), val_loss_LF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("Low Frequency")
-    # plt.show()
+    plt.subplot(2,1,2)
+    plt.plot(range(num_epochs), train_loss_LF)
+    plt.plot(range(num_epochs), val_loss_LF)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("Low Frequency")
+    plt.show()
 
