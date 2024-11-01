@@ -15,6 +15,7 @@ class RamanNoiseDataset(Dataset):
         self.true_noises = torch.from_numpy(true_noises)
         self.noisy_signals = []
         self.noise_out = []
+        self.gt_signal = []
         self.SNR = []
     
     def generate_noisy_signals(self, SNR_range):
@@ -27,10 +28,13 @@ class RamanNoiseDataset(Dataset):
             signal_power = torch.mean(signal ** 2)
             SNR = np.random.uniform(min_SNR, max_SNR)
             target_signal_power = 10**(SNR / 10) * noise_power.item()
-            new_signal = np.sqrt(target_signal_power) * (signal / np.sqrt(signal_power)) + noise_tmp
+            target_signal = np.sqrt(target_signal_power) * (signal / np.sqrt(signal_power))
+            new_signal = target_signal + noise_tmp
 
-            self.noisy_signals.append(new_signal)
-            self.noise_out.append(noise_tmp)
+            tmp = torch.max(new_signal)
+            self.noisy_signals.append(new_signal/tmp)
+            self.noise_out.append(noise_tmp/tmp)
+            self.gt_signal.append(target_signal/tmp)
             self.SNR.append(SNR)
         return
     
@@ -45,7 +49,7 @@ class RamanNoiseDataset(Dataset):
         return len(self.noisy_signals)
 
     def __getitem__(self, idx):
-        return self.noisy_signals_dct[idx], self.noise_out_dct[idx], self.SNR[idx]
+        return self.noisy_signals_dct[idx], self.noise_out_dct[idx], self.gt_signal[idx], self.SNR[idx]
 
 
 if __name__ == "__main__":
@@ -57,6 +61,6 @@ if __name__ == "__main__":
     dataset = RamanNoiseDataset(clean_signals=clean_signals, true_noises=true_noises)
     dataset.generate_noisy_signals(SNR_range=SNR_range)
     dataset.DCT()
-    noisy_tmp, true_tmp = dataset[0]
+    noisy_tmp, true_tmp, gt_tmp, SNR = dataset[0]
     print(f"signal length: {len(dataset)}")
     print(f"shape of a signal: {noisy_tmp.shape}")

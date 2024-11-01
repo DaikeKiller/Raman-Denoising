@@ -12,6 +12,7 @@ import os
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from scipy.signal import resample
+from scipy.fftpack import idct
 
 
 def read_clean_data(clean_dir, customized_noise=False):
@@ -51,16 +52,20 @@ def read_noise_data(root_folder):
     # Return the train, val, and test sets
     return train_data, val_data
 
-def normalization(signal):
+def normalization_for_loss(signal):
     # Generate normalization factor tensor
     # factor = [np.log(50*a) / (8*np.log(50)) for a in range(1, signal.shape[2]+1)]
-    factor = [0.01*a + 0.1 for a in range(1, signal.shape[2]+1)]
+    factor = [0.01*(a+20)+1 for a in range(1, signal.shape[2]+1)]
     factor = np.array(factor)
     factor = torch.from_numpy(np.reshape(factor, [1, 1, -1])).float()
 
     # Move the factor to the same device as the signal
-    # factor = factor.to(signal.device)
+    factor = factor.to(signal.device)
     return signal * factor
+
+def normalization_for_input(signal):
+    # shape (batch_size, 1, signal_length)
+    return signal / torch.max(signal, dim=2, keepdim=True)[0]
 
 def reload_train_dataloader():
     train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)
@@ -85,30 +90,52 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch+1}/{num_epochs} Training', unit="batch")
 
-        for noisy_signal, true_noise, _ in progress_bar:
+        for noisy_signal, true_noise, _, _ in progress_bar:
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             true_noise = true_noise.unsqueeze(1).float().to(device)      # Shape: (batch_size, 1, length)
 
             if clip == "high":
-                noisy_signal = noisy_signal[:,:,81:]
-                true_noise = true_noise[:,:,81:]
-                true_noise = noisy_signal - true_noise # for high frequency, we use residual learning
+                noisy_signal = noisy_signal[:,:,81+950:]
+                true_noise = true_noise[:,:,81+950:]
+            elif clip == "mid":
+                noisy_signal = noisy_signal[:,:,81:81+950]
+                true_noise = true_noise[:,:,81:81+950]
             elif clip == "low":
                 noisy_signal = noisy_signal[:,:,:81]
                 true_noise = true_noise[:,:,:81]
-                true_noise = noisy_signal - true_noise
+                # true_noise = normalization_for_loss(true_noise)
             elif clip != "full":
                 Warning("please input a valid string to the param *clip")
 
-            # true_noise = normalization(true_noise)
+            noise_residual = noisy_signal - true_noise
 
             optimizer.zero_grad()  # Zero the gradients
 
             # Forward pass
             outputs = model(noisy_signal)
-            # outputs = normalization(outputs)
-            loss = criterion(outputs, true_noise)
+            # if clip == "low":
+                # outputs = normalization_for_loss(outputs)
+            dct_loss = criterion(outputs, noise_residual)
+
+            # Calculate IDCT of output and ground truth for time-domain loss
+            idct_output = torch.tensor(
+                idct(outputs.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                dtype=outputs.dtype, device=device
+            )
+            idct_target = torch.tensor(
+                idct(noise_residual.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                dtype=noise_residual.dtype, device=device
+            )
+            idct_loss = criterion(idct_output, idct_target)
+
+            # Regularize the mean difference between output and ground truth
+            mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
+
+            if clip != "high":
+                loss = 1000 * dct_loss + 1000 * idct_loss
+            else:
+                loss = 1000 * dct_loss
 
             # Backward pass and optimization
             loss.backward()
@@ -122,26 +149,48 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
         with torch.no_grad():  # Disable gradient calculation for validation
-            for noisy_signal, true_noise, _ in val_dataloader:
+            for noisy_signal, true_noise, _, _ in val_dataloader:
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
                 true_noise = true_noise.unsqueeze(1).float().to(device)
+
                 if clip == "high":
-                    noisy_signal = noisy_signal[:,:,81:]
-                    true_noise = true_noise[:,:,81:]
-                    true_noise = noisy_signal - true_noise # for high frequency, we use residual learning
+                    noisy_signal = noisy_signal[:,:,81+950:]
+                    true_noise = true_noise[:,:,81+950:]
+                elif clip == "mid":
+                    noisy_signal = noisy_signal[:,:,81:81+950]
+                    true_noise = true_noise[:,:,81:81+950]
                 elif clip == "low":
                     noisy_signal = noisy_signal[:,:,:81]
                     true_noise = true_noise[:,:,:81]
-                    true_noise = noisy_signal - true_noise
+                    # true_noise = normalization_for_loss(true_noise)
                 elif clip != "full":
                     Warning("please input a valid string to the param *clip")
+
+                noise_residual = noisy_signal - true_noise
                 
                 # true_noise = normalization(true_noise)
 
                 outputs = model(noisy_signal)
-                # outputs = normalization(outputs)
-                loss = criterion(outputs, true_noise)
 
+                dct_loss = criterion(outputs, noise_residual)
+
+                idct_output = torch.tensor(
+                    idct(outputs.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                    dtype=outputs.dtype, device=device
+                )
+                idct_target = torch.tensor(
+                    idct(noise_residual.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                    dtype=noise_residual.dtype, device=device
+                )
+                idct_loss = criterion(idct_output, idct_target)
+
+                # Regularize the mean difference between output and ground truth
+                mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
+
+                if clip != "high":
+                    loss = 1000 * dct_loss + 1000 * idct_loss
+                else:
+                    loss = 1000 * dct_loss
                 running_val_loss += loss.item()
 
         avg_val_loss = running_val_loss / len(val_dataloader)
@@ -170,12 +219,16 @@ if __name__ == "__main__":
     # Hyperparameters
     num_epochs = 100
     batch_size = 32
-    learning_rate_HF = 0.0002
-    learning_rate_LF = 0.0002
+    learning_rate_HF = 2e-6
+    learning_rate_MF = 2e-6
+    learning_rate_LF = 2e-5
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
+
     save_name_HF = f"model_{timestamp}_HF.pth"
     save_path_HF = os.path.join(save_dir, save_name_HF)
+    save_name_MF = f"model_{timestamp}_MF.pth"
+    save_path_MF = os.path.join(save_dir, save_name_MF)
     save_name_LF = f"model_{timestamp}_LF.pth"
     save_path_LF = os.path.join(save_dir, save_name_LF)
 
@@ -184,6 +237,9 @@ if __name__ == "__main__":
     model_HF = RamanNoiseNet_HF()
     criterion_HF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
+    model_MF = RamanNoiseNet_HF()
+    criterion_MF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
+    optimizer_MF = optim.Adam(model_MF.parameters(), lr=learning_rate_MF, weight_decay=0.01)
     model_LF = RamanNoiseNet_LF()
     criterion_LF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF, weight_decay=0.01)
@@ -205,22 +261,30 @@ if __name__ == "__main__":
 
     # Train the model
     train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
-    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
+    # train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
+    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
 
     plt.figure
-    plt.subplot(2,1,1)
+    plt.subplot(3,1,1)
     plt.plot(range(num_epochs), train_loss_HF)
     plt.plot(range(num_epochs), val_loss_HF)
     plt.legend(["train loss", "validation loss"])
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.title("High Frequency")
-    plt.subplot(2,1,2)
-    plt.plot(range(num_epochs), train_loss_LF)
-    plt.plot(range(num_epochs), val_loss_LF)
-    plt.legend(["train loss", "validation loss"])
-    plt.xlabel("epoch")
-    plt.ylabel("loss")
-    plt.title("Low Frequency")
+    # plt.subplot(3,1,2)
+    # plt.plot(range(num_epochs), train_loss_MF)
+    # plt.plot(range(num_epochs), val_loss_MF)
+    # plt.legend(["train loss", "validation loss"])
+    # plt.xlabel("epoch")
+    # plt.ylabel("loss")
+    # plt.title("Mid Frequency")
+    # plt.subplot(3,1,3)
+    # plt.plot(range(num_epochs), train_loss_LF)
+    # plt.plot(range(num_epochs), val_loss_LF)
+    # plt.legend(["train loss", "validation loss"])
+    # plt.xlabel("epoch")
+    # plt.ylabel("loss")
+    # plt.title("Low Frequency")
     plt.show()
 
