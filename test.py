@@ -1,7 +1,82 @@
 from train import *
 from scipy.fftpack import idct
 import random
+from scipy.interpolate import interp1d
 
+
+def extend_signal_left(signals, num_points=5, method='linear'):
+    """
+    Extend each signal in the batch by adding `num_points` to the left using interpolation.
+    
+    Parameters:
+        signals (np.ndarray): Input signals of shape (batch_size, signal_length).
+        num_points (int): Number of points to add to the left of each signal.
+        method (str): Interpolation method, either 'linear' or 'spline'.
+    
+    Returns:
+        np.ndarray: Extended signals of shape (batch_size, signal_length + num_points).
+    """
+    batch_size, signal_length = signals.shape
+    extended_length = signal_length + num_points
+    extended_signals = np.zeros((batch_size, extended_length))
+
+    # Indices for the original and new points
+    x_original = np.arange(signal_length)
+    x_new = np.arange(-num_points, 0)  # New indices to add to the left
+
+    for i in range(batch_size):
+        # Choose interpolation method
+        if method == 'linear':
+            # Linear extrapolation
+            linear_interpolator = np.polyfit(x_original[:num_points], signals[i, :num_points], 1)
+            new_points = np.polyval(linear_interpolator, x_new)
+
+        elif method == 'spline':
+            # Spline extrapolation with cubic spline
+            spline_interpolator = interp1d(x_original, signals[i], kind='cubic', fill_value="extrapolate")
+            new_points = spline_interpolator(x_new)
+
+        else:
+            raise ValueError("Invalid method. Choose either 'linear' or 'spline'.")
+
+        # Concatenate the new points with the original signal
+        extended_signals[i] = np.concatenate((new_points, signals[i]))
+
+    return extended_signals
+
+def soft_low_pass_filter_dct(dct_signal, cutoff=1031, transition_width=50):
+    """
+    Apply a soft low-pass filter to the DCT signal by tapering coefficients
+    above the cutoff frequency using a Hann window.
+
+    Parameters:
+        dct_signal (np.ndarray): Input DCT signals with shape (batch_size, dct_length).
+        cutoff (int): Cutoff frequency for the low-pass filter.
+        transition_width (int): Width of the transition band for tapering. Frequencies
+                                in this range around the cutoff will be gradually reduced.
+
+    Returns:
+        np.ndarray: Soft-filtered DCT signals with high frequencies smoothly attenuated.
+    """
+    batch_size, dct_length = dct_signal.shape
+
+    # Ensure the cutoff frequency and transition width are within bounds
+    cutoff = min(cutoff, dct_length)
+    end_transition = min(cutoff + transition_width, dct_length)
+
+    # Initialize a Hann window for the transition band
+    window = np.hanning(2 * transition_width)
+    transition_window = window[transition_width:]  # Use only the second half of the window
+
+    # Create a filter mask with ones up to the cutoff frequency
+    filter_mask = np.ones(dct_length)
+    filter_mask[cutoff:end_transition] = transition_window  # Apply tapering window
+    filter_mask[end_transition:] = 0  # Zero out frequencies above the transition band
+
+    # Apply the filter mask to each DCT signal in the batch
+    filtered_dct_signal = dct_signal * filter_mask
+
+    return filtered_dct_signal
 
 # Function to test the model and clean the signals
 def test_model(model_HF, model_LF, test_dataloader, device):
@@ -82,7 +157,7 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
         # Progress bar for testing phase
         for noisy_signal, true_noise, _, SNR in tqdm(test_dataloader, desc="Testing", unit="batch"):
             target_signal = noisy_signal[0, :] - true_noise[0, :]
-            target_signal = target_signal.unsqueeze(0).repeat(10, 1)
+            target_signal = target_signal.unsqueeze(0).repeat(true_noise.shape[0], 1)
             noisy_signal = target_signal + true_noise
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
@@ -98,35 +173,43 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
             # noisy_signal_HF = noisy_signal_HF - center_term
             # norm_term = torch.max(torch.abs(noisy_signal_HF), dim=2, keepdim=True)[0]
             # noisy_signal_HF = noisy_signal_HF / norm_term
-            predicted_noise_HF_residual = model_HF(noisy_signal_HF)
-            noise_HF = noisy_signal_HF - predicted_noise_HF_residual
+            predicted_noise_HF_residual = model_HF(noisy_signal_HF).squeeze(1).cpu().numpy()
+            # noise_HF = noisy_signal_HF - predicted_noise_HF_residual
             # noise_HF = (noisy_signal_HF - predicted_noise_HF_residual) * norm_term + center_term
 
             # center_term = torch.mean(noisy_signal_MF, dim=2, keepdim=True)[0]
             # noisy_signal_MF = noisy_signal_MF - center_term
             # norm_term = torch.max(torch.abs(noisy_signal_MF), dim=2, keepdim=True)[0]
             # noisy_signal_MF = noisy_signal_MF / norm_term
-            predicted_noise_MF_residual = model_MF(noisy_signal_MF)
-            noise_MF = noisy_signal_MF - predicted_noise_MF_residual
+            predicted_noise_MF_residual = model_MF(noisy_signal_MF).squeeze(1).cpu().numpy()
+            # noise_MF = noisy_signal_MF - predicted_noise_MF_residual
             # noise_MF = (noisy_signal_MF - predicted_noise_MF_residual) * norm_term + center_term
 
             # center_term = torch.mean(noisy_signal_LF, dim=2, keepdim=True)[0]
             # noisy_signal_LF = noisy_signal_LF - center_term
             # norm_term = torch.max(torch.abs(noisy_signal_LF), dim=2, keepdim=True)[0]
             # noisy_signal_LF = noisy_signal_LF / norm_term
-            predicted_noise_LF_residual = model_LF(noisy_signal_LF)
-            noise_LF = noisy_signal_LF - predicted_noise_LF_residual
+            predicted_noise_LF_residual = model_LF(noisy_signal_LF).squeeze(1).cpu().numpy()
+            # noise_LF = noisy_signal_LF - predicted_noise_LF_residual
             # noise_LF = (noisy_signal_LF - predicted_noise_LF_residual) * norm_term + center_term
 
-            noise_HF = noise_HF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
-            noise_MF = noise_MF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
-            noise_LF = noise_LF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            predicted_noise_residual = np.concatenate((predicted_noise_LF_residual, predicted_noise_MF_residual, predicted_noise_HF_residual), axis=1)
+            predicted_noise_residual = soft_low_pass_filter_dct(predicted_noise_residual, 1031, 50)
 
-            predicted_noise = np.concatenate((noise_LF, noise_MF, noise_HF), axis=1)
+            predicted_noise = noisy_signal_np - predicted_noise_residual
 
-            predicted_noise[:,81+950:] = true_noise_np[:,81+950:] # !!!!!test*********
+            # noise_HF = noise_HF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            # noise_MF = noise_MF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+            # noise_LF = noise_LF.squeeze(1).cpu().numpy()  # Convert to numpy and remove channel dimension
+
+            # predicted_noise = np.concatenate((noise_LF, noise_MF, noise_HF), axis=1)
+
+            # predicted_noise[:,81:] = true_noise_np[:,81:] # !!!!!test******
 
             idct_predicted_noise = idct(predicted_noise, type=2, norm='ortho', axis=1)
+            remove_num = 3 # to deal with zero-point spike
+            # idct_predicted_noise = idct_predicted_noise[:,remove_num:]
+            # idct_predicted_noise = extend_signal_left(idct_predicted_noise, num_points=remove_num, method="spline")
             # idct_predicted_noise_power = np.mean(idct_predicted_noise ** 2, axis=1)
             # idct_predicted_noise = idct_predicted_noise / np.sqrt(idct_predicted_noise_power[:, np.newaxis])
             
@@ -209,20 +292,20 @@ def plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, num_sampl
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    test_dir = "data/generated/generated_skin_spectrum_10022024_104256.pkl"  # Test data
+    test_dir = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
     test_noise_dir = "data/noise/processed/test_data.pkl"
     SNR_range = [-8, 0]
 
     # Load the best trained model
-    model_HF_path = "models/pretrained/model_11012024_115418_HF.pth"
+    model_HF_path = "models/pretrained/model_11012024_163702_HF.pth"
     model_HF = RamanNoiseNet_HF()
     model_HF.load_state_dict(torch.load(model_HF_path))
     model_HF.eval()  # Set the model to evaluation mode
-    model_MF_path = "models/pretrained/model_11012024_104104_MF.pth"
+    model_MF_path = "models/pretrained/model_11012024_203920_MF.pth"
     model_MF = RamanNoiseNet_HF()
     model_MF.load_state_dict(torch.load(model_MF_path))
     model_HF.eval()  # Set the model to evaluation mode
-    model_LF_path = "models/pretrained/model_11012024_104104_LF.pth"
+    model_LF_path = "models/pretrained/model_11012024_163702_LF.pth"
     model_LF = RamanNoiseNet_LF()
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
@@ -242,7 +325,7 @@ if __name__ == "__main__":
     predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
     print(noisy_signals.shape)
 
-    plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, num_samples=5)
+    plot_signals(noisy_signals[:,5:], cleaned_signals[:,5:], gt_signals[:,5:], SNR_list, num_samples=5)
 
     print("Testing complete. Results saved.")
 
