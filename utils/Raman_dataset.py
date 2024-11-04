@@ -29,6 +29,9 @@ class RamanNoiseDataset(Dataset):
             SNR = np.random.uniform(min_SNR, max_SNR)
             target_signal_power = 10**(SNR / 10) * noise_power.item()
             target_signal = np.sqrt(target_signal_power) * (signal / np.sqrt(signal_power))
+            tmp = np.random.uniform(0.1, 100)
+            target_signal = target_signal * tmp
+            noise_tmp = noise_tmp * tmp
             new_signal = target_signal + noise_tmp
 
             tmp = torch.max(new_signal)

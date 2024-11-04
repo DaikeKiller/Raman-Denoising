@@ -66,7 +66,7 @@ if __name__ == "__main__":
     basis = loadmat("data/basics/basis_calibrated.mat")
     basis = basis["basis"]
     given_concentrations = None
-    num_to_generate = 10000 # if given_concentrations is provided, you can set this to None
+    num_to_generate = 1000 # if given_concentrations is provided, you can set this to None
     save_flag = True
     save_path = None # if this is None, the file will be saved to a default path "data/generated/"
 

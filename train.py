@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from models.Network import RamanNoiseNet, RamanNoiseNet_Clip, RamanNoiseNet_HF, RamanNoiseNet_LF
+from models.Network import RamanNoiseNet, RamanNoiseNet_HF, RamanNoiseNet_LF
 from utils.Raman_dataset import RamanNoiseDataset
 import pickle
 import numpy as np
@@ -132,10 +132,10 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             # Regularize the mean difference between output and ground truth
             mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
 
-            if clip != "high":
-                loss = 1000 * dct_loss + 1000 * idct_loss
+            if clip != "low":
+                loss = 1000 * dct_loss + 1000 * idct_loss + 1000 * mean_reg_loss
             else:
-                loss = 1000 * dct_loss
+                loss = 1000 * dct_loss + 1000 * idct_loss
 
             # Backward pass and optimization
             loss.backward()
@@ -187,10 +187,11 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 # Regularize the mean difference between output and ground truth
                 mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
 
-                if clip != "high":
-                    loss = 1000 * dct_loss + 1000 * idct_loss
+                if clip != "low":
+                    loss = 1000 * dct_loss + 1000 * idct_loss + 1000 * mean_reg_loss
                 else:
-                    loss = 1000 * dct_loss
+                    loss = 1000 * dct_loss + 1000 * idct_loss
+
                 running_val_loss += loss.item()
 
         avg_val_loss = running_val_loss / len(val_dataloader)
@@ -211,17 +212,17 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    train_dir = "data/generated/generated_skin_spectrum_10072024_173907.pkl"
-    val_dir = "data/generated/generated_skin_spectrum_10022024_104349.pkl"
+    train_dir = "data/generated/generated_skin_spectrum_11012024_143219.pkl"
+    val_dir = "data/generated/generated_skin_spectrum_11012024_143226.pkl"
     noise_dir = "data/noise/processed"
     SNR_range = [-8, 0]
 
     # Hyperparameters
     num_epochs = 100
     batch_size = 32
-    learning_rate_HF = 2e-6
-    learning_rate_MF = 2e-6
-    learning_rate_LF = 2e-5
+    learning_rate_HF = 2e-5
+    learning_rate_MF = 2e-5
+    learning_rate_LF = 2e-4
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
@@ -260,25 +261,25 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
-    # train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
+    # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
+    train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
     # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
 
     plt.figure
-    plt.subplot(3,1,1)
-    plt.plot(range(num_epochs), train_loss_HF)
-    plt.plot(range(num_epochs), val_loss_HF)
-    plt.legend(["train loss", "validation loss"])
-    plt.xlabel("epoch")
-    plt.ylabel("loss")
-    plt.title("High Frequency")
-    # plt.subplot(3,1,2)
-    # plt.plot(range(num_epochs), train_loss_MF)
-    # plt.plot(range(num_epochs), val_loss_MF)
+    # plt.subplot(3,1,1)
+    # plt.plot(range(num_epochs), train_loss_HF)
+    # plt.plot(range(num_epochs), val_loss_HF)
     # plt.legend(["train loss", "validation loss"])
     # plt.xlabel("epoch")
     # plt.ylabel("loss")
-    # plt.title("Mid Frequency")
+    # plt.title("High Frequency")
+    plt.subplot(3,1,2)
+    plt.plot(range(num_epochs), train_loss_MF)
+    plt.plot(range(num_epochs), val_loss_MF)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("Mid Frequency")
     # plt.subplot(3,1,3)
     # plt.plot(range(num_epochs), train_loss_LF)
     # plt.plot(range(num_epochs), val_loss_LF)
