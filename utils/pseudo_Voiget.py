@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import warnings
+import pickle
+import os
+import time
 
 
 class RamanGenerator:
@@ -62,7 +65,7 @@ class RamanGenerator:
             warnings.warn("No wavenumber data was input. Generating spectrum based on customized wavenumber.")
             spec_bound = params.get('spectra_boundary')
             spec_resolution = params.get('spectra_resolution')
-            self.wvn = np.linspace(spec_bound[0], spec_bound[1], (spec_bound[1]-spec_bound[0])*spec_resolution + 1)
+            self.wvn = np.linspace(spec_bound[0], spec_bound[1], int(np.ceil((spec_bound[1]-spec_bound[0]) / spec_resolution + 1)))
 
         self.data = generate_raman_spectrum(self.wvn, amplitude, peak_positions, FWHM)
 
@@ -95,35 +98,72 @@ class RamanGenerator:
         Return the Raman spectra wavenumber.
         """
         return self.wvn
+    
+    def generate_multiple_spectra(self, num_spectra=10000, max_peak_num=16, spectra_range=(800, 1800), amplitude_range=(0.05, 1.0), \
+                                  num_datapt=1981, fwhm_range=(10, 100), noise_level=0, save_flag=True, save_path='data/generated/raman_spectra.pkl'):
+        """
+        Generate multiple Raman spectra and save them to a pickle file.
+        
+        Parameters:
+        - num_spectra: int
+            Number of spectra to generate.
+        - fwhm_range: tuple of int
+            Range for FWHM values for each peak (default is 10 to 100 cm^-1).
+        - noise_level: float
+            Standard deviation for noise to be added to each spectrum.
+        - output_file: str
+            Path to the output pickle file.
+        """
+        spectra = np.zeros((num_datapt, num_spectra))
+        
+        for i in range(num_spectra):
+            # Randomize parameters for each spectrum
+            num_peaks = np.random.randint(1, max_peak_num)
+            peak_positions = np.random.uniform(spectra_range[0], spectra_range[1], num_peaks)
+            amplitudes = np.random.uniform(amplitude_range[0], amplitude_range[1], num_peaks)
+            fwhms = np.random.uniform(fwhm_range[0], fwhm_range[1], num_peaks)
+            
+            params = {
+                'peak_positions': peak_positions,
+                'amplitude': amplitudes,
+                'FWHM': fwhms,
+                'spectra_boundary': [spectra_range[0], spectra_range[1]],
+                'spectra_resolution': (spectra_range[1] - spectra_range[0]) / (num_datapt - 1),
+                'baseline_flag': False,
+                'peak_position_baseline': 1000,
+                'amplitude_baseline': 0.01,
+                'FWHM_baseline': 2000,
+            }
+            
+            self.generate(params)  # Generate a single spectrum
+            if noise_level > 0:
+                self.addNoise()  # Optionally add noise
+            
+            spectra[:, i] = self.getData()  # Store generated spectrum
+        
+        if save_flag:
+            # Save spectra to a pickle file
+            with open(save_path, 'wb') as file:
+                pickle.dump(spectra, file)
+        
+        print(f"Generated {num_spectra} spectra and saved to {save_path}")
 
 
 if __name__ == "__main__":
-    # Example usage:
-    params = {
-        'peak_positions': [300, 800, 1200],
-        'amplitude': [0.1, 0.9, 0.05],
-        'FWHM': [25, 30, 50],
-        # === Below is for customized wavenumber, if you already
-        # have a wavenumber as input, you can ignore those params ===
-        'spectra_boundary': [100, 2000],
-        'spectra_resolution': 1000,
-        # === Below is for adding a baseline, if you do not want to add
-        # a base line, you can set 'baseline_flag': False and ignore other params ===
-        'baseline_flag': True,
-        'peak_position_baseline': 1000,
-        'amplitude_baseline': 0.01,
-        'FWHM_baseline': 2000,
-    }
+    save_path = "data/generated"
+    save_name = "raman_pesudo_Vioget_train"
+    timestamp = time.strftime("%m%d%Y_%H%M%S")
+    file_name = save_name + "_" + timestamp + ".pkl"
+    save_name = os.path.join(save_path, file_name)
+    num_spectra = 20000
+    max_peak_num = 30
+    spectra_range = (800, 1800)
+    amplitude_range = (0.05, 1.0)
+    num_datapt = 1981
+    fwhm_range = (10, 200) 
+    noise_level = 0 
+    save_flag=True
 
-    Generator = RamanGenerator()
-    Generator.generate(params)
-    data = Generator.getData()
-    wvn = Generator.getWVN()
-
-    # Plot the resulting Raman spectrum
-    plt.plot(wvn, data, label='Simulated Raman Spectrum')
-    plt.xlabel('Wavenumber (cm$^{-1}$)')
-    plt.ylabel('Intensity')
-    plt.title('Simulated Raman Spectrum with Pseudo-Voigt Function')
-    plt.legend()
-    plt.show()
+    generator = RamanGenerator()
+    generator.generate_multiple_spectra(num_spectra=num_spectra, max_peak_num=max_peak_num, spectra_range=spectra_range, amplitude_range=amplitude_range, \
+                                        num_datapt=num_datapt, fwhm_range=fwhm_range, noise_level=noise_level, save_flag=save_flag, save_path=save_name)
