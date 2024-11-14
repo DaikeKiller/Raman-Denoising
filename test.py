@@ -4,6 +4,7 @@ import random
 from scipy.interpolate import interp1d
 
 
+<<<<<<< HEAD
 def moving_average(signal, window_size=5):
     """
     Apply a simple moving average filter to the input signal.
@@ -17,6 +18,8 @@ def moving_average(signal, window_size=5):
     """
     return np.convolve(signal, np.ones(window_size) / window_size, mode='same')
 
+=======
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
 def extend_signal_left(signals, num_points=5, method='linear'):
     """
     Extend each signal in the batch by adding `num_points` to the left using interpolation.
@@ -204,9 +207,15 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
             # noisy_signal_LF = noisy_signal_LF - center_term
             # norm_term = torch.max(torch.abs(noisy_signal_LF), dim=2, keepdim=True)[0]
             # noisy_signal_LF = noisy_signal_LF / norm_term
+<<<<<<< HEAD
             predicted_noise_LF = model_LF(noisy_signal_LF).squeeze(1).cpu().numpy()
             # predicted_noise_LF_residual = noisy_signal_LF.squeeze(1).cpu().numpy() - predicted_noise_LF
             predicted_noise_LF_residual = predicted_noise_LF
+=======
+            predicted_noise_LF_residual = model_LF(noisy_signal_LF).squeeze(1).cpu().numpy()
+            # noise_LF = noisy_signal_LF - predicted_noise_LF_residual
+            # noise_LF = (noisy_signal_LF - predicted_noise_LF_residual) * norm_term + center_term
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
 
             predicted_noise_residual = np.concatenate((predicted_noise_LF_residual, predicted_noise_MF_residual, predicted_noise_HF_residual), axis=1)
             predicted_noise_residual = soft_low_pass_filter_dct(predicted_noise_residual, 1031, 50)
@@ -222,6 +231,14 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
             # predicted_noise[:,81:] = true_noise_np[:,81:] # !!!!!test******
 
             idct_predicted_noise = idct(predicted_noise, type=2, norm='ortho', axis=1)
+<<<<<<< HEAD
+=======
+            remove_num = 3 # to deal with zero-point spike
+            # idct_predicted_noise = idct_predicted_noise[:,remove_num:]
+            # idct_predicted_noise = extend_signal_left(idct_predicted_noise, num_points=remove_num, method="spline")
+            # idct_predicted_noise_power = np.mean(idct_predicted_noise ** 2, axis=1)
+            # idct_predicted_noise = idct_predicted_noise / np.sqrt(idct_predicted_noise_power[:, np.newaxis])
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
             
             # Subtract predicted noise from noisy signal to clean the signal
             idct_noisy_signal_np = idct(noisy_signal_np, type=2, norm='ortho', axis=1)
@@ -324,7 +341,10 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     test_dir = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
+<<<<<<< HEAD
     test_dir_pV = "data/generated/raman_pesudo_Vioget_test_11122024_094312.pkl"  # Test data
+=======
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
     test_noise_dir = "data/noise/processed/test_data.pkl"
     SNR_range = [-8, 0]
 
@@ -338,7 +358,10 @@ if __name__ == "__main__":
     model_MF.load_state_dict(torch.load(model_MF_path))
     model_HF.eval()  # Set the model to evaluation mode
     model_LF_path = "models/pretrained/model_11012024_163702_LF.pth"
+<<<<<<< HEAD
     # model_LF = AUnet(1, 1)
+=======
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
     model_LF = RamanNoiseNet_LF()
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
@@ -363,7 +386,11 @@ if __name__ == "__main__":
     predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
     print(noisy_signals.shape)
 
+<<<<<<< HEAD
     plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_avg_signals, gt_signals, SNR_list, num_samples=5)
+=======
+    plot_signals(noisy_signals[:,5:], cleaned_signals[:,5:], gt_signals[:,5:], SNR_list, num_samples=5)
+>>>>>>> 88ee3e0832f89c91bf897153e1ac0659311fc56e
 
     print("Testing complete. Results saved.")
 
