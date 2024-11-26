@@ -19,7 +19,7 @@ class SkinSimulator:
                 nums = 1
             self.concentrations = np.random.rand(self.componentNum, nums)
         else:
-            self.concentrations = np.array(concentrations)
+            self.concentrations = np.transpose(np.array(concentrations))
             if self.concentrations.shape[0] != self.componentNum:
                 Warning("Input concentration needs to have f-by-n shape. f is the \
                               numder of basis spectra, n is the number of spectra to generate. \
@@ -28,16 +28,35 @@ class SkinSimulator:
                 if self.concentrations.shape[1] != nums:
                     Warning("The number of spectra (nums) provided does not match the second \
                                 dimension of the input concentrations.")
+            for i in range(self.concentrations.shape[1]):
+                con_tmp = self.concentrations[:, i]
+                factor = np.sqrt(np.sum((con_tmp**2)))
+                self.concentrations[:, i] = self.concentrations[:, i] / factor
         
         self.spectra = self.basis @ self.concentrations
         return
     
     def plot(self) -> None:
-        plt.plot(range(1,self.spectraLength+1), self.spectra)
+        if self.spectra.shape[1] > 10:
+            plot_spectra = self.spectra[:, :10]
+        else:
+            plot_spectra = self.spectra
+        plt.figure()
+        plt.plot(range(1,self.spectraLength+1), plot_spectra)
         plt.xlabel("pseudo_wavenumber", fontsize=15)
         plt.ylabel("Intensity", fontsize=15)
         plt.title("Generated skin spectrum", fontsize=15, fontweight='bold')
-        plt.show()
+        # plt.show()
+    
+    def plot_basis(self) -> None:
+        plt.figure()
+        for i in range(self.componentNum):
+            plt.subplot(self.componentNum, 1, i+1)
+            plt.plot(range(1,self.spectraLength+1), self.basis[:,i])
+            plt.xlabel("pseudo_wavenumber", fontsize=15)
+            plt.ylabel("Intensity", fontsize=15)
+            # plt.title(f"Basis_{i}", fontsize=15, fontweight='bold')
+        # plt.show()
     
     def getData(self, saveFlag=None, saveDir=None) -> list:
         out = [self.concentrations, self.spectra]
@@ -72,7 +91,11 @@ if __name__ == "__main__":
 
     Generator = SkinSimulator(basis=basis)
     Generator.generate(concentrations=given_concentrations, nums=num_to_generate)
+    # test_con = [[0.1, 0.8, 0.6, 0.7, 0.3, 0.1, 0.9], [1, 1, 1, 1, 1, 1, 100]]
+    # Generator.generate(concentrations=test_con)
     # Generator.plot()
+    # Generator.plot_basis()
+    # plt.show()
 
-    [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
-    print(spectrum.shape)
+    # [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
+    # print(spectrum.shape)

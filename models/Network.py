@@ -123,7 +123,7 @@ class RamanNoiseNet_HF(nn.Module):
 
         # MLP layers for complex feature mapping with Batch Normalization
         self.mlp = nn.Sequential(
-            nn.Linear(128 * 980, 512),  # Adjust size based on input length
+            nn.Linear(128 * 1000, 512),  # Adjust size based on input length
             nn.BatchNorm1d(512),
             nn.LeakyReLU(),
             nn.Linear(512, 256),
@@ -132,7 +132,7 @@ class RamanNoiseNet_HF(nn.Module):
             nn.Linear(256, 128),
             nn.BatchNorm1d(128),
             nn.LeakyReLU(),
-            nn.Linear(128, 980),  # Output back to original length
+            nn.Linear(128, 1000),  # Output back to original length
         )
         
         # Final convolution layer to map back to the original single channel

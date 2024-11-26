@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 from scipy.fftpack import dct
+import math
 
 
 class RamanNoiseDataset(Dataset):
@@ -23,16 +24,20 @@ class RamanNoiseDataset(Dataset):
         num_of_noise = self.true_noises.shape[0]
         for signal in self.clean_signals:
             idx = np.random.randint(0, num_of_noise)
-            noise_tmp = self.true_noises[idx]
+            noise_tmp = self.true_noises[idx] # the noise power is 1 by default
             noise_power = torch.mean(noise_tmp ** 2)
+            noise_tmp = noise_tmp / torch.sqrt(noise_power)
             signal_power = torch.mean(signal ** 2)
-            SNR = np.random.uniform(min_SNR, max_SNR)
-            target_signal_power = 10**(SNR / 10) * noise_power.item()
-            target_signal = np.sqrt(target_signal_power) * (signal / np.sqrt(signal_power))
-            tmp = np.random.uniform(0.1, 100)
-            target_signal = target_signal * tmp
-            noise_tmp = noise_tmp * tmp
+            SNR = np.log10(np.random.uniform(min_SNR, max_SNR))
+            # target_signal_power = 10**(SNR / 10) * noise_power.item()
+            target_signal_power = SNR * noise_power.item()
+            target_signal = math.sqrt(target_signal_power) * (signal / math.sqrt(signal_power))
             new_signal = target_signal + noise_tmp
+            # give a magnification
+            mag = np.random.uniform(0.1, 100)
+            new_signal = new_signal * mag
+            target_signal = target_signal * mag
+            noise_tmp = noise_tmp * mag
 
             tmp = torch.max(new_signal)
             self.noisy_signals.append(new_signal/tmp)
@@ -58,7 +63,7 @@ class RamanNoiseDataset(Dataset):
 if __name__ == "__main__":
     num_samples = 100
     spectrum_length = 1000
-    SNR_range = [-2, 2]
+    SNR_range = [1.001, 10]
     clean_signals = np.random.randn(spectrum_length, num_samples) # the clean data is generated as shape(spectrum_length, num_samples)
     true_noises = np.random.randn(num_samples, spectrum_length)
     dataset = RamanNoiseDataset(clean_signals=clean_signals, true_noises=true_noises)

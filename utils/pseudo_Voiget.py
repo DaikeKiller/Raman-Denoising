@@ -11,6 +11,7 @@ class RamanGenerator:
         self.data = None
         self.noise = noise
         self.wvn = wvn
+        self.output = None
 
     def generate(self, params):
         """
@@ -115,14 +116,25 @@ class RamanGenerator:
             Path to the output pickle file.
         """
         spectra = np.zeros((num_datapt, num_spectra))
-        
-        for i in range(num_spectra):
+
+        i = 0
+        while i < num_spectra:
             # Randomize parameters for each spectrum
             num_peaks = np.random.randint(1, max_peak_num)
             peak_positions = np.random.uniform(spectra_range[0], spectra_range[1], num_peaks)
             amplitudes = np.random.uniform(amplitude_range[0], amplitude_range[1], num_peaks)
             fwhms = np.random.uniform(fwhm_range[0], fwhm_range[1], num_peaks)
+
+            for j in range(num_peaks):
+                if (peak_positions[j] + 1.5*fwhms[j] < spectra_range[1]) and (peak_positions[j] - 1.5*fwhms[j] > spectra_range[0]):
+                    valid_spectrum = True
+                else:
+                    valid_spectrum = False
+                    break
             
+            if not valid_spectrum:
+                continue
+
             params = {
                 'peak_positions': peak_positions,
                 'amplitude': amplitudes,
@@ -140,6 +152,7 @@ class RamanGenerator:
                 self.addNoise()  # Optionally add noise
             
             spectra[:, i] = self.getData()  # Store generated spectrum
+            i += 1
         
         if save_flag:
             # Save spectra to a pickle file
@@ -147,23 +160,39 @@ class RamanGenerator:
                 pickle.dump(spectra, file)
         
         print(f"Generated {num_spectra} spectra and saved to {save_path}")
+        self.output = spectra
+    
+    def plot(self):
+        num_spectra = self.output.shape[1]
+        if num_spectra > 10:
+            plot_spectra = self.output[:, :10]
+        else:
+            plot_spectra = self.output
+
+        plt.figure()
+        for i in range(plot_spectra.shape[1]):
+            plt.plot(range(1, self.output.shape[0]+1), self.output[:,i])
+        plt.xlabel("pseudo_wavenumber", fontsize=15)
+        plt.ylabel("Intensity", fontsize=15)
 
 
 if __name__ == "__main__":
     save_path = "data/generated"
-    save_name = "raman_pesudo_Vioget_train"
+    save_name = "raman_pesudo_Vioget_test"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
     file_name = save_name + "_" + timestamp + ".pkl"
     save_name = os.path.join(save_path, file_name)
-    num_spectra = 20000
+    num_spectra = 1000
     max_peak_num = 30
     spectra_range = (800, 1800)
     amplitude_range = (0.05, 1.0)
     num_datapt = 1981
     fwhm_range = (10, 200) 
     noise_level = 0 
-    save_flag=True
+    save_flag = True
 
     generator = RamanGenerator()
     generator.generate_multiple_spectra(num_spectra=num_spectra, max_peak_num=max_peak_num, spectra_range=spectra_range, amplitude_range=amplitude_range, \
                                         num_datapt=num_datapt, fwhm_range=fwhm_range, noise_level=noise_level, save_flag=save_flag, save_path=save_name)
+    generator.plot()
+    plt.show()
