@@ -3,3 +3,7 @@ __pycache__
 data
 .idea
 models/pretrained/*
+Raman_denoising
+results
+.vscode
+tmp

@@ -245,7 +245,7 @@ if __name__ == "__main__":
     train_dir_pV = "data/generated/raman_pesudo_Vioget_train_11182024_110514.pkl"
     val_dir_pV = "data/generated/raman_pesudo_Vioget_val_11182024_110718.pkl"
     noise_dir = "data/noise/processed_new"
-    SNR_range = [1.0001, 5]
+    SNR_range = [0.01, 0.7]
 
     # Hyperparameters
     num_epochs = 400
@@ -298,18 +298,18 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
+    train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
     train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
     train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, 400, device, save_path_LF, clip="low")
 
     plt.figure
-    # plt.subplot(3,1,1)
-    # plt.plot(range(num_epochs), train_loss_HF)
-    # plt.plot(range(num_epochs), val_loss_HF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("High Frequency")
+    plt.subplot(3,1,1)
+    plt.plot(range(num_epochs), train_loss_HF)
+    plt.plot(range(num_epochs), val_loss_HF)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("High Frequency")
     plt.subplot(3,1,2)
     plt.plot(range(num_epochs), train_loss_MF)
     plt.plot(range(num_epochs), val_loss_MF)

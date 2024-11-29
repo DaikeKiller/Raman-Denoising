@@ -49,12 +49,16 @@ class SkinSimulator:
         # plt.show()
     
     def plot_basis(self) -> None:
-        plt.figure()
+        name_list = ["Collagen", "Elastin", "Triolein", "Nucleus", "Keratin", "Ceramide", "Water"]
+        plt.figure(figsize=(10, 7))
         for i in range(self.componentNum):
-            plt.subplot(self.componentNum, 1, i+1)
-            plt.plot(range(1,self.spectraLength+1), self.basis[:,i])
-            plt.xlabel("pseudo_wavenumber", fontsize=15)
-            plt.ylabel("Intensity", fontsize=15)
+            # plt.subplot(self.componentNum, 1, i+1)
+            # plt.title(name_list[i])
+            plt.plot(np.linspace(800, 1800, self.spectraLength), self.basis[:,i] + i*1.5, color="black")
+        plt.xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=13)
+        plt.title("Biophysical Model Basis", fontsize=16)
+        plt.yticks([i*1.5 for i in range(self.componentNum)], labels=name_list, fontsize=15)
+            # plt.ylabel("Intensity", fontsize=15)
             # plt.title(f"Basis_{i}", fontsize=15, fontweight='bold')
         # plt.show()
     
@@ -94,8 +98,9 @@ if __name__ == "__main__":
     # test_con = [[0.1, 0.8, 0.6, 0.7, 0.3, 0.1, 0.9], [1, 1, 1, 1, 1, 1, 100]]
     # Generator.generate(concentrations=test_con)
     # Generator.plot()
-    # Generator.plot_basis()
-    # plt.show()
+    Generator.plot_basis()
+    plt.show()
+    plt.savefig("./results/basis.png")
 
     # [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
     # print(spectrum.shape)
