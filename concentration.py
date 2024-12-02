@@ -6,7 +6,7 @@ import pandas as pd
 
 
 # signals, _, concentrations = read_clean_data("data/generated/generated_skin_spectrum_11012024_143232.pkl")
-with open("./results/results_0.01to1.pkl", 'rb') as file:
+with open("./results/results_0.1to0.5.pkl", 'rb') as file:
     data = pickle.load(file)
 
 signals_origin = data["gt_signals"]
@@ -28,7 +28,7 @@ coeffs_cleaned = get_concentrations(basis, signals_cleaned)
 
 save_coeffs = {"origin": coeffs_origin, "cleaned": coeffs_cleaned}
 
-with open("./results/coeffs_0.01to1.pkl", 'wb') as f:
+with open("./results/coeffs_0.1to0.5.pkl", 'wb') as f:
     pickle.dump(save_coeffs, f)
 
 coeffs_origin_np = np.array(coeffs_origin)
@@ -45,4 +45,4 @@ for i in range(basis.shape[1]):
 df = pd.DataFrame(p_values)
 
 # Save to CSV
-df.to_csv("./results/p_values_0.01to1.csv", index=False)
+df.to_csv("./results/p_values_0.1to0.5.csv", index=False)
