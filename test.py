@@ -459,23 +459,23 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
     fig, axs = plt.subplots(num_samples, 5, figsize=(25, num_samples * 3))
     
     for i, idx in enumerate(selected_indices):
-        axs[i, 0].plot(noisy_signals[idx], label="Noisy Signal")
+        axs[i, 0].plot(np.linspace(800, 1800, 1981), noisy_signals[idx], label="Noisy Signal")
         axs[i, 0].set_title(f"Noisy Signal, SNR = {SNR_list[idx]:.2f}")
         # axs[i, 0].legend()
 
-        axs[i, 1].plot(moving_window_cleaned[idx], label="Cleaned Signal with moving avg (window_size=11)", color='green')
+        axs[i, 1].plot(np.linspace(800, 1800, 1981), moving_window_cleaned[idx], label="Cleaned Signal with moving avg (window_size=11)", color='green')
         axs[i, 1].set_title(f"Cleaned Signal with moving avg (window_size=11)")
         # axs[i, 1].legend()
 
-        axs[i, 2].plot(noise_avg_signals[idx], label="Cleaned Signal with noise avg (avg num=10)", color='green')
+        axs[i, 2].plot(np.linspace(800, 1800, 1981), noise_avg_signals[idx], label="Cleaned Signal with noise avg (avg num=10)", color='green')
         axs[i, 2].set_title(f"Cleaned Signal with noise avg (avg num=10)")
 
-        axs[i, 3].plot(cleaned_signals[idx], label="Cleaned Signal with model", color='green')
+        axs[i, 3].plot(np.linspace(800, 1800, 1981), cleaned_signals[idx], label="Cleaned Signal with model", color='green')
         axs[i, 3].set_title(f"Cleaned Signal with model")
         # axs[i, 3].legend()
 
-        axs[i, 4].plot(gt_signals[idx], label="Test True Signal", color='orange')
-        axs[i, 4].plot(gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i, 4].plot(np.linspace(800, 1800, 1981), gt_signals[idx], label="Test True Signal", color='orange')
+        axs[i, 4].plot(np.linspace(800, 1800, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
         axs[i, 4].set_title(f"Test True Signal")
         axs[i, 4].legend()
 
@@ -485,9 +485,9 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
-        axs[i].plot(gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
-        axs[i].plot(gt_signals[idx] - moving_window_cleaned[idx], label="Residual_moving_window", color='gray')
-        axs[i].plot(gt_signals[idx] - noise_avg_signals[idx], label="Residual_noise_avg", color='brown')
+        axs[i].plot(np.linspace(800, 1800, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i].plot(np.linspace(800, 1800, 1981), gt_signals[idx] - moving_window_cleaned[idx], label="Residual_moving_window", color='gray')
+        axs[i].plot(np.linspace(800, 1800, 1981), gt_signals[idx] - noise_avg_signals[idx], label="Residual_noise_avg", color='brown')
         # axs[i].set_title(f"Smaple {idx}")
         axs[i].legend()
 
@@ -537,7 +537,7 @@ if __name__ == "__main__":
     test_dataset = RamanNoiseDataset(clean_signals=test_signal, true_noises=test_noise)
     test_dataset.generate_noisy_signals(SNR_range=SNR_range)
     test_dataset.DCT()  # Apply DCT on the test data
-    test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=100, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
     predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
