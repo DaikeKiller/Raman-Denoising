@@ -1,2 +1,9 @@
 __pycache__
 .git
+data
+.idea
+models/pretrained/*
+Raman_denoising
+results
+.vscode
+tmp
