@@ -58,6 +58,12 @@ def read_noise_data(root_folder):
     test_pickle_file = os.path.join(root_folder, 'test_data.pkl')
     with open(test_pickle_file, 'wb') as f:
         pickle.dump(test_data, f)
+    train_pickle_file = os.path.join(root_folder, 'train_data.pkl')
+    with open(train_pickle_file, 'wb') as f:
+        pickle.dump(train_data, f)
+    val_pickle_file = os.path.join(root_folder, 'val_data.pkl')
+    with open(val_pickle_file, 'wb') as f:
+        pickle.dump(val_data, f)
     # Return the train, val, and test sets
     return train_data, val_data
 
@@ -152,7 +158,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             mean_reg_loss = (outputs.mean() - true_noise.mean()) ** 2
 
             if clip != "low":
-                loss = 1000 * dct_loss + 1000 * idct_loss + 10 * mean_reg_loss
+                loss = 1000 * dct_loss + 100 * idct_loss + 10 * mean_reg_loss
             else:
                 loss = 100 * dct_loss + 1 * idct_loss
 
@@ -218,7 +224,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
                 if clip != "low":
                     # loss = 1000 * dct_loss + 100 * idct_loss + 2000 * mean_reg_loss
-                    loss = 1000 * dct_loss + 100 * idct_loss + 100 * mean_reg_loss
+                    loss = 1000 * dct_loss + 100 * idct_loss + 10 * mean_reg_loss
                 else:
                     loss = 100 * dct_loss + 1 * idct_loss
 
@@ -267,7 +273,7 @@ if __name__ == "__main__":
 
     # Initialize model, loss function, and optimizer
     # model = RamanNoiseNet()
-    model_HF = RamanNoiseNet_HF()
+    model_HF = AUnet(1, 1)
     criterion_HF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
     model_MF = AUnet(1, 1)
@@ -300,18 +306,18 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
+    train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
     train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
-    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, 400, device, save_path_LF, clip="low")
+    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, 400, device, save_path_LF, clip="low")
 
-    # plt.figure
-    # plt.subplot(3,1,1)
-    # plt.plot(range(num_epochs), train_loss_HF)
-    # plt.plot(range(num_epochs), val_loss_HF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("High Frequency")
+    plt.figure
+    plt.subplot(3,1,1)
+    plt.plot(range(num_epochs), train_loss_HF)
+    plt.plot(range(num_epochs), val_loss_HF)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("High Frequency")
     plt.subplot(3,1,2)
     plt.plot(range(num_epochs), train_loss_MF)
     plt.plot(range(num_epochs), val_loss_MF)
@@ -319,13 +325,13 @@ if __name__ == "__main__":
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.title("Mid Frequency")
-    # plt.subplot(3,1,3)
-    # plt.plot(range(400), train_loss_LF)
-    # plt.plot(range(400), val_loss_LF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("Low Frequency")
-    # plt.show()
-    # plt.savefig("results/training_loss.jpg")
+    plt.subplot(3,1,3)
+    plt.plot(range(400), train_loss_LF)
+    plt.plot(range(400), val_loss_LF)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("Low Frequency")
+    plt.show()
+    plt.savefig("results/training_loss.jpg")
 
