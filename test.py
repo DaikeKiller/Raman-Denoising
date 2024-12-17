@@ -127,7 +127,6 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
                 noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx])), axis=0)
                 noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]))
 
-            target_signal = noisy_signal - true_noise
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             true_noise_np = true_noise.squeeze(1).cpu().numpy()
             gt_signal = target_signal.squeeze(1).cpu().numpy()
@@ -135,7 +134,8 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
 
             noisy_signal_HF = noisy_signal[:, :, 81+950-50:]
             noisy_signal_MF = noisy_signal[:, :, 81-50:81+950]
-            noisy_signal_LF = noisy_signal[:, :, :81]
+            noisy_signal_LF = noisy_signal[:, :, 1:81]
+            noisy_signal_LF_include_dc = noisy_signal[:, :, :81]
 
             HF_center_factor = torch.mean(noisy_signal_HF, dim=2, keepdim=True)
             MF_center_factor = torch.mean(noisy_signal_MF, dim=2, keepdim=True)
@@ -166,13 +166,13 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
             # noisy_signal_LF = noisy_signal_LF - center_term
             # norm_term = torch.max(torch.abs(noisy_signal_LF), dim=2, keepdim=True)[0]
             # noisy_signal_LF = noisy_signal_LF / norm_term
-            predicted_noise_LF = model_LF(noisy_signal_LF).squeeze(1).cpu().numpy()
-            # predicted_noise_LF = predicted_noise_LF + LF_center_factor.squeeze(1).cpu().numpy()
-            predicted_noise_LF_residual = noisy_signal_LF.squeeze(1).cpu().numpy() - predicted_noise_LF
+            predicted_noise_LF = np.zeros((noisy_signal.shape[0], 81))
+            predicted_noise_LF[:, 1:] = model_LF(noisy_signal_LF).squeeze(1).cpu().numpy()
+            predicted_noise_LF_residual = noisy_signal_LF_include_dc.squeeze(1).cpu().numpy() - predicted_noise_LF
             # predicted_noise_LF_residual = predicted_noise_LF
 
             predicted_noise_residual = np.concatenate((predicted_noise_LF_residual[:,:81-5], predicted_noise_MF_residual[:,45:-25], predicted_noise_HF_residual[:,25:]), axis=1)
-            predicted_noise_residual = soft_low_pass_filter_dct(predicted_noise_residual, 1031, 50)
+            predicted_noise_residual = soft_low_pass_filter_dct(predicted_noise_residual, 800, 50)
 
             predicted_noise = noisy_signal_np - predicted_noise_residual
 
@@ -182,14 +182,14 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
 
             # predicted_noise = np.concatenate((noise_LF, noise_MF, noise_HF), axis=1)
 
-            # predicted_noise[:,:81] = true_noise_np[:,:81] # !!!!!test******
+            # predicted_noise[:,:50] = true_noise_np[:,:50] # !!!!!test******
 
             idct_predicted_noise = idct(predicted_noise, type=2, norm='ortho', axis=1)
             
             # Subtract predicted noise from noisy signal to clean the signal
             idct_noisy_signal_np = idct(noisy_signal_np, type=2, norm='ortho', axis=1)
             cleaned_signal = idct_noisy_signal_np - idct_predicted_noise
-            remove_num = 3 # to deal with zero-point spike
+            remove_num = 5 # to deal with zero-point spike
             cleaned_signal[:,:remove_num] = cleaned_signal[:,remove_num:remove_num*2]
 
             # cleaned_signal = als_baseline_correction(cleaned_signal, lam=1e8, p=0.001, n_iter=10)
@@ -350,7 +350,6 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
                 noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx]), norm="ortho"), axis=0)
                 noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]), norm="ortho")
 
-            target_signal = noisy_signal - true_noise
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             true_noise_np = true_noise.squeeze(1).cpu().numpy()
             gt_signal = target_signal.squeeze(1).cpu().numpy()
@@ -506,7 +505,7 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "signal_one_pV.jpg"))
+    plt.savefig(os.path.join(save_path, "signal_all_pV.jpg"))
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
@@ -518,7 +517,7 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "residual_one_pV.jpg"))
+    plt.savefig(os.path.join(save_path, "residual_all_pV.jpg"))
 
 
 if __name__ == "__main__":
@@ -530,7 +529,7 @@ if __name__ == "__main__":
     SNR_range = [0.01, 10]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
-    save_data_flag = False
+    save_data_flag = True
     save_path = "./results/"
 
     # Load the best trained model
@@ -556,7 +555,7 @@ if __name__ == "__main__":
         test_noise = pickle.load(file)
 
     # test_signal = np.concatenate((test_signal_skin, test_signal_pV), axis=1)
-    test_signal = test_signal_skin
+    test_signal = test_signal_pV
 
     # Create Dataset and DataLoader
     test_dataset = RamanNoiseDataset(clean_signals=test_signal, true_noises=test_noise)
@@ -565,14 +564,14 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
-    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
 
     # save
     if save_data_flag:
         save_data = {"noisy_signals": noisy_signals, "cleaned_signals": cleaned_signals, "moving_window_cleaned": moving_window_cleaned, \
                     "noise_avg_signals": noise_avg_signals, "gt_signals": gt_signals, "SNR_list": SNR_list}
-        save_results = os.path.join(save_path, 'results_0.01to1.pkl')
+        save_results = os.path.join(save_path, 'results_all_pV.pkl')
         with open(save_results, 'wb') as f:
             pickle.dump(save_data, f)
 
