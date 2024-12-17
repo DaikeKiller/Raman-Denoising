@@ -217,7 +217,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
 
                 if clip != "low":
-                    loss = 1000 * dct_loss + 1000 * idct_loss + 1000 * mean_reg_loss
+                    loss = 1000 * dct_loss + 100 * idct_loss + 2000 * mean_reg_loss
                 else:
                     loss = 100 * dct_loss + 1 * idct_loss
 
