@@ -1,8 +1,9 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-from scipy.fftpack import dct
 import math
+from scipy.fftpack import dct
+from scipy.signal import find_peaks
 
 
 class RamanNoiseDataset(Dataset):
@@ -20,27 +21,33 @@ class RamanNoiseDataset(Dataset):
         self.SNR = []
     
     def generate_noisy_signals(self, SNR_range):
+        def get_signal_power(signal):
+            # peaks, properties = find_peaks(signal, height=0.1, distance=5, prominence=0.4)
+            # peak_amplitudes = properties["peak_heights"]
+            # return np.sum(peak_amplitudes)
+            return np.max(np.array(signal))
         min_SNR, max_SNR = SNR_range
         num_of_noise = self.true_noises.shape[0]
         for signal in self.clean_signals:
             idx = np.random.randint(0, num_of_noise)
             noise_tmp = self.true_noises[idx] # the noise power is 1 by default
-            noise_power = torch.mean(noise_tmp ** 2)
-            noise_tmp = noise_tmp / torch.sqrt(noise_power)
-            signal_power = torch.mean(signal ** 2)
+            # noise_power = torch.mean(noise_tmp ** 2)
+            # noise_tmp = noise_tmp / torch.sqrt(noise_power)
+            signal_power = get_signal_power(signal)
             # SNR = np.log10(np.random.uniform(min_SNR, max_SNR))
             SNR = np.random.uniform(min_SNR, max_SNR)
             # target_signal_power = 10**(SNR / 10) * noise_power.item()
-            target_signal_power = SNR * noise_power.item()
-            target_signal = math.sqrt(target_signal_power) * (signal / math.sqrt(signal_power))
+            target_signal_power = SNR
+            target_signal = target_signal_power * signal / signal_power
             new_signal = target_signal + noise_tmp
             # give a magnification
-            mag = np.random.uniform(0.1, 100)
-            new_signal = new_signal * mag
-            target_signal = target_signal * mag
-            noise_tmp = noise_tmp * mag
+            # mag = np.random.uniform(0.1, 100)
+            # new_signal = new_signal * mag
+            # target_signal = target_signal * mag
+            # noise_tmp = noise_tmp * mag
 
-            tmp = torch.max(new_signal)
+            tmp = 1
+            # tmp = torch.max(new_signal)
             self.noisy_signals.append(new_signal/tmp)
             self.noise_out.append(noise_tmp/tmp)
             self.gt_signal.append(target_signal/tmp)

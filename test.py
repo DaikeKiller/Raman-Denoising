@@ -95,6 +95,11 @@ def soft_low_pass_filter_dct(dct_signal, cutoff=1031, transition_width=50):
 
 # Function to test the model and clean the signals
 def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
+    def get_signal_power(signal):
+            # peaks, properties = find_peaks(signal, height=0.1, distance=5, prominence=0.4)
+            # peak_amplitudes = properties["peak_heights"]
+            # return np.sum(peak_amplitudes)
+            return np.max(np.array(signal))
     model_HF.to(device)
     model_HF.eval()  # Set the model to evaluation mode
     model_MF.to(device)
@@ -114,9 +119,13 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
         for noisy_signal, true_noise, _, SNR in tqdm(test_dataloader, desc="Testing", unit="batch"):
-            # target_signal = noisy_signal[9, :] - true_noise[9, :]
-            # target_signal = target_signal.unsqueeze(0).repeat(true_noise.shape[0], 1)
-            # noisy_signal = target_signal + true_noise
+            target_signal = noisy_signal - true_noise
+            noise_avg_signal = np.array(noisy_signal.clone())
+            for i in range(noise_avg_signal.shape[0]):
+                selected_noise_idx = np.random.randint(0, noise_avg_signal.shape[0], size=(9,1))
+                selected_noise_idx = np.concatenate([np.array([[i]]), selected_noise_idx], axis=0)
+                noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx])), axis=0)
+                noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]))
 
             target_signal = noisy_signal - true_noise
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
@@ -197,8 +206,8 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
             idct_noisy_signal_np_filtered = np.array([moving_average(signal, 13) for signal in idct_noisy_signal_np])
 
             # noise avg
-            idct_noisy_signal_np_avg = [np.mean(idct_noisy_signal_np[:10,:], axis=0) for i in range(idct_noisy_signal_np.shape[0])]
-            idct_noisy_signal_np_avg = np.array(idct_noisy_signal_np_avg)
+            # idct_noisy_signal_np_avg = [np.mean(idct_noisy_signal_np[:10,:], axis=0) for i in range(idct_noisy_signal_np.shape[0])]
+            idct_noisy_signal_np_avg = np.array(noise_avg_signal)
             
             # Store the results
             predicted_noises.append(idct_predicted_noise)
@@ -303,6 +312,11 @@ def bilateral_cdf(spectra, d=150, sigma_color=10, sigma_space=300):
     return cleaned
 
 def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
+    def get_signal_power(signal):
+            # peaks, properties = find_peaks(signal, height=0.1, distance=5, prominence=0.4)
+            # peak_amplitudes = properties["peak_heights"]
+            # return np.sum(peak_amplitudes)
+            return np.max(np.array(signal))
     model_HF.to(device)
     model_HF.eval()  # Set the model to evaluation mode
     model_MF.to(device)
@@ -323,9 +337,18 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
         # Progress bar for testing phase
         for noisy_signal, true_noise, _, SNR in tqdm(test_dataloader, desc="Testing", unit="batch"):
             target_signal = noisy_signal[9, :] - true_noise[9, :]
+            target_signal_idct = idct(np.array(target_signal), norm="ortho")
+            target_signal_power = get_signal_power(target_signal_idct)
             target_signal = target_signal.unsqueeze(0).repeat(true_noise.shape[0], 1)
-            target_signal = torch.from_numpy(np.array([a * b for a, b, in zip(target_signal, np.sqrt(SNR))]))
+            target_signal = torch.from_numpy(np.array([a * b for a, b, in zip(target_signal, SNR)])) / target_signal_power
             noisy_signal = target_signal + true_noise
+            
+            noise_avg_signal = np.array(noisy_signal.clone())
+            for i in range(target_signal.shape[0]):
+                selected_noise_idx = np.random.randint(0, target_signal.shape[0], size=(9,1))
+                selected_noise_idx = np.concatenate([np.array([[i]]), selected_noise_idx], axis=0)
+                noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx])), axis=0)
+                noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]))
 
             target_signal = noisy_signal - true_noise
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
@@ -406,8 +429,8 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
             idct_noisy_signal_np_filtered = np.array([moving_average(signal, 13) for signal in idct_noisy_signal_np])
 
             # noise avg
-            idct_noisy_signal_np_avg = [np.mean(idct_noisy_signal_np[:10,:], axis=0) for i in range(idct_noisy_signal_np.shape[0])]
-            idct_noisy_signal_np_avg = np.array(idct_noisy_signal_np_avg)
+            # idct_noisy_signal_np_avg = [np.mean(idct_noisy_signal_np[:10,:], axis=0) for i in range(idct_noisy_signal_np.shape[0])]
+            idct_noisy_signal_np_avg = np.array(noise_avg_signal)
             
             # Store the results
             predicted_noises.append(idct_predicted_noise)
@@ -441,6 +464,7 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
     noisy_signals = np.array(noisy_signals)[sorted_indices]
     cleaned_signals = np.array(cleaned_signals)[sorted_indices]
     moving_window_cleaned = np.array(moving_window_cleaned)[sorted_indices]
+    noise_avg_signals = np.array(noise_avg_signals)[sorted_indices]
     gt_signals = np.array(gt_signals)[sorted_indices]
     
     # Get the total number of signals
@@ -502,22 +526,22 @@ if __name__ == "__main__":
     test_dir = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
     test_dir_pV = "data/generated/raman_pesudo_Vioget_test_11182024_110755.pkl"  # Test data
     test_noise_dir = "data/noise/processed_new/test_data.pkl"
-    SNR_range = [0.01, 1]
+    SNR_range = [0.01, 20]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
     save_data_flag = False
     save_path = "./results/"
 
     # Load the best trained model
-    model_HF_path = "models/pretrained/model_11252024_231410_HF.pth"
+    model_HF_path = "models/pretrained/model_12162024_163819_HF.pth"
     model_HF = RamanNoiseNet_HF()
     model_HF.load_state_dict(torch.load(model_HF_path))
     model_HF.eval()  # Set the model to evaluation mode
-    model_MF_path = "models/pretrained/model_11252024_231410_MF.pth"
+    model_MF_path = "models/pretrained/model_12162024_163819_MF.pth"
     model_MF = RamanNoiseNet_HF()
     model_MF.load_state_dict(torch.load(model_MF_path))
     model_HF.eval()  # Set the model to evaluation mode
-    model_LF_path = "models/pretrained/model_11252024_231410_LF.pth"
+    model_LF_path = "models/pretrained/model_12162024_163819_LF.pth"
     model_LF = AUnet(1, 1)
     # model_LF = RamanNoiseNet_LF()
     model_LF.load_state_dict(torch.load(model_LF_path))
@@ -531,17 +555,17 @@ if __name__ == "__main__":
         test_noise = pickle.load(file)
 
     # test_signal = np.concatenate((test_signal_skin, test_signal_pV), axis=1)
-    test_signal = test_signal_skin
+    test_signal = test_signal_pV
 
     # Create Dataset and DataLoader
     test_dataset = RamanNoiseDataset(clean_signals=test_signal, true_noises=test_noise)
     test_dataset.generate_noisy_signals(SNR_range=SNR_range)
     test_dataset.DCT()  # Apply DCT on the test data
-    test_dataloader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
-    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
 
     # save
     if save_data_flag:

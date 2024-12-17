@@ -44,9 +44,10 @@ def read_noise_data(root_folder):
                 data = f.read().strip().split()  # Adjust based on file format
                 data = [float(x) for x in data]  # Convert to float (or int, based on data)
                 # data = data[421:]
-            power = np.mean([a ** 2 for a in data])
+            power = np.std(data)
+            bias = np.mean(data)
             if power > 0:  # Avoid division by zero
-                data = data / np.sqrt(power)
+                data = (data - bias) / power
             txt_data.append(data)  # Add the data to the list
     # Convert list of lists to a NumPy array
     txt_array = np.array(txt_data, dtype=np.float64)
@@ -112,8 +113,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 true_noise = true_noise[:,:,81-50:81+950]
                 noise_residual = noisy_signal - true_noise
             elif clip == "low":
-                noisy_signal = noisy_signal[:,:,:81]
-                true_noise = true_noise[:,:,:81]
+                noisy_signal = noisy_signal[:,:,1:81]
+                true_noise = true_noise[:,:,1:81]
                 noise_residual = true_noise
                 # true_noise = normalization_for_loss(true_noise)
             elif clip != "full":
@@ -180,8 +181,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                     true_noise = true_noise[:,:,81-50:81+950]
                     noise_residual = noisy_signal - true_noise
                 elif clip == "low":
-                    noisy_signal = noisy_signal[:,:,:81]
-                    true_noise = true_noise[:,:,:81]
+                    noisy_signal = noisy_signal[:,:,1:81]
+                    true_noise = true_noise[:,:,1:81]
                     noise_residual = true_noise
                     # true_noise = normalization_for_loss(true_noise)
                 elif clip != "full":
@@ -245,14 +246,14 @@ if __name__ == "__main__":
     train_dir_pV = "data/generated/raman_pesudo_Vioget_train_11182024_110514.pkl"
     val_dir_pV = "data/generated/raman_pesudo_Vioget_val_11182024_110718.pkl"
     noise_dir = "data/noise/processed_new"
-    SNR_range = [0.01, 0.7]
+    SNR_range = [0.01, 10]
 
     # Hyperparameters
     num_epochs = 400
     batch_size = 32
     learning_rate_HF = 2e-6
-    learning_rate_MF = 1e-5
-    learning_rate_LF = 1e-5
+    learning_rate_MF = 3e-5
+    learning_rate_LF = 3e-5
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
@@ -325,4 +326,5 @@ if __name__ == "__main__":
     plt.ylabel("loss")
     plt.title("Low Frequency")
     plt.show()
+    plt.savefig("results/training_loss.jpg")
 
