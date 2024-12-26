@@ -44,9 +44,10 @@ def read_noise_data(root_folder):
                 data = f.read().strip().split()  # Adjust based on file format
                 data = [float(x) for x in data]  # Convert to float (or int, based on data)
                 # data = data[421:]
-            power = np.mean([a ** 2 for a in data])
+            power = np.std(data)
+            bias = np.mean(data)
             if power > 0:  # Avoid division by zero
-                data = data / np.sqrt(power)
+                data = (data - bias) / power
             txt_data.append(data)  # Add the data to the list
     # Convert list of lists to a NumPy array
     txt_array = np.array(txt_data, dtype=np.float64)
@@ -57,6 +58,12 @@ def read_noise_data(root_folder):
     test_pickle_file = os.path.join(root_folder, 'test_data.pkl')
     with open(test_pickle_file, 'wb') as f:
         pickle.dump(test_data, f)
+    train_pickle_file = os.path.join(root_folder, 'train_data.pkl')
+    with open(train_pickle_file, 'wb') as f:
+        pickle.dump(train_data, f)
+    val_pickle_file = os.path.join(root_folder, 'val_data.pkl')
+    with open(val_pickle_file, 'wb') as f:
+        pickle.dump(val_data, f)
     # Return the train, val, and test sets
     return train_data, val_data
 
@@ -106,15 +113,15 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             if clip == "high":
                 noisy_signal = noisy_signal[:,:,81+950-50:]
                 true_noise = true_noise[:,:,81+950-50:]
-                noise_residual = noisy_signal - true_noise
+                # noise_residual = noisy_signal - true_noise
             elif clip == "mid":
                 noisy_signal = noisy_signal[:,:,81-50:81+950]
                 true_noise = true_noise[:,:,81-50:81+950]
-                noise_residual = noisy_signal - true_noise
+                # noise_residual = noisy_signal - true_noise
             elif clip == "low":
-                noisy_signal = noisy_signal[:,:,:81]
-                true_noise = true_noise[:,:,:81]
-                noise_residual = true_noise
+                noisy_signal = noisy_signal[:,:,1:81]
+                true_noise = true_noise[:,:,1:81]
+                # noise_residual = true_noise
                 # true_noise = normalization_for_loss(true_noise)
             elif clip != "full":
                 Warning("please input a valid string to the param *clip")
@@ -122,7 +129,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             # center the signal
             centered = torch.mean(noisy_signal, dim=2, keepdim=True)
             noisy_signal = noisy_signal - centered
-            noise_residual = noise_residual - centered
+            true_noise = true_noise - centered
 
             optimizer.zero_grad()  # Zero the gradients
 
@@ -134,7 +141,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             #     dct_loss = criterion(normalization_for_loss(outputs), normalization_for_loss(noise_residual))
             # else:
             #     dct_loss = criterion(outputs, noise_residual)
-            dct_loss = criterion(outputs, noise_residual)
+            dct_loss = criterion(outputs, true_noise)
 
             # Calculate IDCT of output and ground truth for time-domain loss
             idct_output = torch.tensor(
@@ -142,16 +149,16 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 dtype=outputs.dtype, device=device
             )
             idct_target = torch.tensor(
-                idct(noise_residual.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
-                dtype=noise_residual.dtype, device=device
+                idct(true_noise.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                dtype=true_noise.dtype, device=device
             )
             idct_loss = criterion(idct_output, idct_target)
 
             # Regularize the mean difference between output and ground truth
-            mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
+            mean_reg_loss = (outputs.mean() - true_noise.mean()) ** 2
 
             if clip != "low":
-                loss = 1000 * dct_loss + 1000 * idct_loss + 10 * mean_reg_loss
+                loss = 1000 * dct_loss + 100 * idct_loss + 10 * mean_reg_loss
             else:
                 loss = 100 * dct_loss + 1 * idct_loss
 
@@ -174,15 +181,15 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 if clip == "high":
                     noisy_signal = noisy_signal[:,:,81+950-50:]
                     true_noise = true_noise[:,:,81+950-50:]
-                    noise_residual = noisy_signal - true_noise
+                    # noise_residual = noisy_signal - true_noise
                 elif clip == "mid":
                     noisy_signal = noisy_signal[:,:,81-50:81+950]
                     true_noise = true_noise[:,:,81-50:81+950]
-                    noise_residual = noisy_signal - true_noise
+                    # noise_residual = noisy_signal - true_noise
                 elif clip == "low":
-                    noisy_signal = noisy_signal[:,:,:81]
-                    true_noise = true_noise[:,:,:81]
-                    noise_residual = true_noise
+                    noisy_signal = noisy_signal[:,:,1:81]
+                    true_noise = true_noise[:,:,1:81]
+                    # noise_residual = true_noise
                     # true_noise = normalization_for_loss(true_noise)
                 elif clip != "full":
                     Warning("please input a valid string to the param *clip")
@@ -190,7 +197,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 # center the signal
                 centered = torch.mean(noisy_signal, dim=2, keepdim=True)
                 noisy_signal = noisy_signal - centered
-                noise_residual = noise_residual - centered
+                true_noise = true_noise - centered
                        
                 # true_noise = normalization(true_noise)
 
@@ -200,23 +207,24 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 #     dct_loss = criterion(normalization_for_loss(outputs), normalization_for_loss(noise_residual))
                 # else:
                 #     dct_loss = criterion(outputs, noise_residual)
-                dct_loss = criterion(outputs, noise_residual)
+                dct_loss = criterion(outputs, true_noise)
 
                 idct_output = torch.tensor(
                     idct(outputs.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
                     dtype=outputs.dtype, device=device
                 )
                 idct_target = torch.tensor(
-                    idct(noise_residual.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
-                    dtype=noise_residual.dtype, device=device
+                    idct(true_noise.detach().cpu().numpy(), type=2, norm='ortho', axis=-1),
+                    dtype=true_noise.dtype, device=device
                 )
                 idct_loss = criterion(idct_output, idct_target)
 
                 # Regularize the mean difference between output and ground truth
-                mean_reg_loss = (outputs.mean() - noise_residual.mean()) ** 2
+                mean_reg_loss = (outputs.mean() - true_noise.mean()) ** 2
 
                 if clip != "low":
-                    loss = 1000 * dct_loss + 1000 * idct_loss + 1000 * mean_reg_loss
+                    # loss = 1000 * dct_loss + 100 * idct_loss + 2000 * mean_reg_loss
+                    loss = 1000 * dct_loss + 100 * idct_loss + 10 * mean_reg_loss
                 else:
                     loss = 100 * dct_loss + 1 * idct_loss
 
@@ -245,14 +253,14 @@ if __name__ == "__main__":
     train_dir_pV = "data/generated/raman_pesudo_Vioget_train_11182024_110514.pkl"
     val_dir_pV = "data/generated/raman_pesudo_Vioget_val_11182024_110718.pkl"
     noise_dir = "data/noise/processed_new"
-    SNR_range = [0.01, 0.7]
+    SNR_range = [0.01, 10]
 
     # Hyperparameters
     num_epochs = 400
     batch_size = 32
-    learning_rate_HF = 2e-6
-    learning_rate_MF = 1e-5
-    learning_rate_LF = 1e-5
+    learning_rate_HF = 2e-5
+    learning_rate_MF = 2e-4
+    learning_rate_LF = 3e-5
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
@@ -265,10 +273,10 @@ if __name__ == "__main__":
 
     # Initialize model, loss function, and optimizer
     # model = RamanNoiseNet()
-    model_HF = RamanNoiseNet_HF()
+    model_HF = AUnet(1, 1)
     criterion_HF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
-    model_MF = RamanNoiseNet_HF()
+    model_MF = AUnet(1, 1)
     criterion_MF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_MF = optim.Adam(model_MF.parameters(), lr=learning_rate_MF)
     model_LF = AUnet(1, 1)
@@ -325,4 +333,5 @@ if __name__ == "__main__":
     plt.ylabel("loss")
     plt.title("Low Frequency")
     plt.show()
+    plt.savefig("results/training_loss.jpg")
 
