@@ -539,7 +539,13 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    test_dir = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
+    # test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
+    # test_noise_dir = "data/noise/processed_new/test_data.pkl"
+    # test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143219.pkl"
+    # test_noise_dir = "data/noise/processed_new/train_data.pkl"
+    test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143226.pkl"
+    test_noise_dir = "data/noise/processed_new/val_data.pkl"
+    
     test_dir_pV = "data/generated/raman_pesudo_Vioget_test_11182024_110755.pkl"  # Test data
     test_noise_dir = "data/noise/processed_new/test_data.pkl"
     # test_dir_pV = "data/generated/raman_pesudo_Vioget_val_11182024_110718.pkl"
@@ -568,7 +574,7 @@ if __name__ == "__main__":
     model_LF.eval()  # Set the model to evaluation mode
 
     # Load test data
-    test_signal_skin, _, test_concentrations = read_clean_data(clean_dir=test_dir, customized_noise=False)
+    test_signal_skin, _, test_concentrations = read_clean_data(clean_dir=test_dir_skin, customized_noise=False)
     # Load test data
     test_signal_pV, _ = read_clean_data(clean_dir=test_dir_pV, customized_noise=False, pV=True)
     with open(test_noise_dir, 'rb') as file:
@@ -584,8 +590,8 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
-    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
 
     # save
     if save_data_flag:
