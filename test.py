@@ -1,5 +1,5 @@
 from train import *
-from scipy.fftpack import idct
+from scipy.fftpack import idct, dct
 import random
 from scipy.interpolate import interp1d
 from scipy.ndimage import uniform_filter1d
@@ -119,8 +119,8 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
             for i in range(noise_avg_signal.shape[0]):
                 selected_noise_idx = np.random.randint(0, noise_avg_signal.shape[0], size=(9,1))
                 selected_noise_idx = np.concatenate([np.array([[i]]), selected_noise_idx], axis=0)
-                noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx])), axis=0)
-                noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]))
+                noise_added = np.mean(idct(np.array(true_noise[selected_noise_idx]), norm='ortho'), axis=0)
+                noise_avg_signal[i] = noise_added + idct(np.array(target_signal[i]), norm='ortho')
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             true_noise_np = true_noise.squeeze(1).cpu().numpy()
@@ -331,7 +331,7 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
         for noisy_signal, true_noise, _, SNR in tqdm(test_dataloader, desc="Testing", unit="batch"):
-            target_signal = noisy_signal[80, :] - true_noise[80, :]
+            target_signal = noisy_signal[101, :] - true_noise[101, :]
             target_signal_idct = idct(np.array(target_signal), norm="ortho")
             target_signal_power = get_signal_power(target_signal_idct)
             target_signal = target_signal.unsqueeze(0).repeat(true_noise.shape[0], 1)
@@ -446,6 +446,27 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
         true_noises = np.concatenate(true_noises, axis=0)
         gt_signals = np.concatenate(gt_signals, axis=0)
         SNR_list = np.concatenate(SNR_list, axis=0)
+        
+    plt.figure(figsize=(12,5))
+    plt.subplot(1,2,1)
+    freq = np.linspace(0,1981/990,1981)
+    plt.plot(freq, dct(true_noises[10], norm="ortho"), label="Real noise", alpha=0.4)
+    plt.plot(freq, dct(predicted_noises[10], norm="ortho"), label="Predicted noise", alpha=0.4)
+    plt.plot(freq, dct(true_noises[10] - predicted_noises[10], norm="ortho"), label="Difference (real minus predicted)")
+    plt.xlabel("frequency (sample/wavenumber)")
+    plt.ylabel("Intensity (a.u.)")
+    plt.title("DCT of noise")
+    plt.legend()
+    plt.subplot(1,2,2)
+    wvn = np.linspace(800,1790,1981)
+    plt.plot(wvn, true_noises[10], label="Real noise", alpha=0.4)
+    plt.plot(wvn, predicted_noises[10], label="Predicted noise", alpha=0.4)
+    plt.plot(wvn, true_noises[10] - predicted_noises[10], label="Difference (real minus predicted)")
+    plt.xlabel(r'wavenumber ($\mathrm{cm}^{-1}$)')
+    plt.ylabel("Intensity (a.u.)")
+    plt.title("Noise in wavenumbers")
+    plt.legend()
+    plt.savefig("results/model_result_example.jpg")
 
 
         # cleaned_signals = cleaned_signals / np.max(cleaned_signals, axis=1).reshape(-1, 1)
@@ -494,13 +515,13 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
         # axs[i, 3].legend()
 
         axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Test True Signal", color='orange')
-        axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        # axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
         axs[i, 4].set_title(f"Test True Signal")
-        axs[i, 4].legend()
+        # axs[i, 4].legend()
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "signal_all_pV.jpg"))
+    plt.savefig(os.path.join(save_path, "signal_all_pV_test.jpg"))
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
@@ -512,7 +533,7 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "residual_all_pV.jpg"))
+    plt.savefig(os.path.join(save_path, "residual_all_pV_test.jpg"))
 
 
 if __name__ == "__main__":
@@ -528,7 +549,7 @@ if __name__ == "__main__":
     SNR_range = [0.01, 10]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
-    save_data_flag = True
+    save_data_flag = False
     save_path = "./results/"
 
     # Load the best trained model
@@ -563,8 +584,8 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
-    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
-    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
+    # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
 
     # save
     if save_data_flag:
