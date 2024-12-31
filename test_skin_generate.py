@@ -11,13 +11,18 @@ import numpy as np
 from scipy.fftpack import idct
 import matplotlib.pyplot as plt
 import os
+from scipy.signal import savgol_filter
+import pywt
 
 
-def read_data(filename):
+def read_data(filename, type="from_cleaned"):
     with open(filename, 'rb') as file:
         data = pickle.load(file)
-    cleaned_signals, gt_signals = data["cleaned_signals"], data["gt_signals"]
-    return cleaned_signals, gt_signals, data
+    if type == "from_cleaned":
+        out_signals, gt_signals = data["cleaned_signals"], data["gt_signals"]
+    if type == "from_noisy":
+        out_signals, gt_signals = data["noisy_signals"], data["gt_signals"]
+    return out_signals, gt_signals, data
 
 def norm(signals):
     mean_ = np.mean(signals, axis=1).reshape(-1,1)
@@ -41,13 +46,60 @@ def test_model(model, test_dataloader, device):
         results = np.concatenate(results, axis=0)
     return results
 
-def plot_signals(noisy_signals, cleaned_signals, skin_gen, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
+def add_other_methods_for_comparison(data):
+    # SG filter
+    signals = data["noisy_signals"]
+    
+    def SG_filter(singals):
+        window_length = 100  # Should be odd and <= number of data points
+        polyorder = 4       # Polynomial order for smoothing
+
+        # Apply SG filter to each spectrum
+        cleaned_data = np.apply_along_axis(
+            lambda spectrum: savgol_filter(spectrum, window_length=window_length, polyorder=polyorder),
+            axis=1,
+            arr=signals
+        )
+        return cleaned_data
+    
+    def wavelet_denoise(spectrum, wavelet='db4', level=3, thresholding='soft'):
+        # Wavelet decomposition
+        coeffs = pywt.wavedec(spectrum, wavelet, level=level)
+        
+        # Thresholding
+        sigma = np.median(np.abs(coeffs[-1])) / 0.01  # Estimate noise level
+        threshold = sigma * np.sqrt(2 * np.log(len(spectrum)))
+        denoised_coeffs = [
+            pywt.threshold(c, value=threshold, mode=thresholding) if i > 0 else c
+            for i, c in enumerate(coeffs)
+        ]
+        
+        # Reconstruct the denoised signal
+        denoised_spectrum = pywt.waverec(denoised_coeffs, wavelet)
+        
+        # Ensure the reconstructed spectrum has the same length
+        return denoised_spectrum[:len(spectrum), :spectrum.shape[1]]
+    
+    SG_out = SG_filter(signals)
+    wavelet_out = wavelet_denoise(signals)
+    
+    data["SG_denoise"] = SG_out
+    data["wavelet_denoise"] = wavelet_out
+    
+    save_results = os.path.join("results/results_for_skin_test.pkl")
+    with open(save_results, 'wb') as f:
+        pickle.dump(data, f)
+    
+    return data
+
+def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen_from_noisy, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
     # Sort indices based on SNR_list in ascending order
     sorted_indices = np.argsort(SNR_list)
     SNR_list = np.array(SNR_list)[sorted_indices]
     noisy_signals = np.array(noisy_signals)[sorted_indices]
     cleaned_signals = np.array(cleaned_signals)[sorted_indices]
-    skin_gen = np.array(skin_gen)[sorted_indices]
+    skin_gen_from_cleaned = np.array(skin_gen_from_cleaned)[sorted_indices]
+    skin_gen_from_noisy = np.array(skin_gen_from_noisy)[sorted_indices]
     gt_signals = np.array(gt_signals)[sorted_indices]
     
     # Get the total number of signals
@@ -58,11 +110,12 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen, gt_signals, SNR_list,
     
     selected_indices = []
     for i in range(num_samples):
-        selected_indices.append(i*total_signals//num_samples + total_signals//num_samples//10)
+        selected_indices.append(i*total_signals//num_samples + total_signals//num_samples//10 - 2)
         
     # Select random samples
     # selected_indices = sorted(random.sample(range(len(SNR_list)), num_samples))
     
+    # =========== figure for only skin gen from cleaned ================
     fig, axs = plt.subplots(num_samples, 4, figsize=(20, num_samples * 3))
     
     for i, idx in enumerate(selected_indices):
@@ -74,7 +127,7 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen, gt_signals, SNR_list,
         axs[i, 1].set_title(f"Denoised spectra with model")
         # axs[i, 3].legend()
         
-        axs[i, 2].plot(np.linspace(800, 1790, 1981), skin_gen[idx], label="Skin generation output", color='green')
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation output", color='green')
         axs[i, 2].set_title(f"Skin generation output")
 
         axs[i, 3].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange')
@@ -84,32 +137,98 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen, gt_signals, SNR_list,
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "signal_skin_gen_all_test.jpg"))
+    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_cleaned_all_test.jpg"))
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
-        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
-        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen[idx], label="Residual_moving_window", color='red')
+        # axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_cleaned[idx], label="Residual_from_cleaned", color='red')
         # axs[i].set_title(f"Smaple {idx}")
-        axs[i].legend()
+        # axs[i].legend()
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "residual_skin_gen_all_test.jpg"))
+    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_cleaned_all_test.jpg"))
+    
+    # ==================== figure for only skin gen from noisy ================
+    fig, axs = plt.subplots(num_samples, 3, figsize=(15, num_samples * 3))
+    
+    for i, idx in enumerate(selected_indices):
+        axs[i, 0].plot(np.linspace(800, 1790, 1981), noisy_signals[idx], label="Original low-SNR spectra")
+        axs[i, 0].set_title(f"Original low-SNR spectra, SNR = {SNR_list[idx]:.2f}")
+        # axs[i, 0].legend()
+        
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation output", color='green')
+        axs[i, 1].set_title(f"Skin generation output")
 
-if __name__ == "__main__":
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange')
+        # axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i, 2].set_title(f"Pure spectra")
+        # axs[i, 4].legend()
+
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_noisy_all_test.jpg"))
+
+    fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
+    for i, idx in enumerate(selected_indices):
+        # axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_noisy[idx], label="Residual_from_noisy", color='black')
+        # axs[i].set_title(f"Smaple {idx}")
+        # axs[i].legend()
+    
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_noisy_all_test.jpg"))
+    
+    # =========== figure for both ===============
+    fig, axs = plt.subplots(num_samples, 3, figsize=(15, num_samples * 3))
+    
+    for i, idx in enumerate(selected_indices):
+        axs[i, 0].plot(np.linspace(800, 1790, 1981), noisy_signals[idx], label="Original low-SNR spectra")
+        axs[i, 0].set_title(f"Original low-SNR spectra, SNR = {SNR_list[idx]:.2f}")
+        # axs[i, 0].legend()
+        
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation from low-SNR", color='green')
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation from noise removal", color='red')
+        axs[i, 1].set_title(f"Skin generation output")
+        axs[i, 1].legend()
+
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange')
+        # axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i, 2].set_title(f"Pure spectra")
+        # axs[i, 4].legend()
+
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_both_all_test.jpg"))
+
+    fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
+    for i, idx in enumerate(selected_indices):
+        # axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_cleaned[idx], label="Residual_from_cleaned", color='red')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_noisy[idx], label="Residual_from_noisy", color='black')
+        # axs[i].set_title(f"Smaple {idx}")
+        axs[i].legend()
+        
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_both_all_test.jpg"))
+        
+    
+def main(model_path, process_data_type = "from_cleaned", save_flag = False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     filename_test = "results/results_for_skin_test.pkl"
-    input_spectra_test, true_spectra_test, data = read_data(filename_test)
+    input_spectra_test, true_spectra_test, data = read_data(filename_test, process_data_type)
     input_spectra_test, mean_test, max_test = norm(input_spectra_test)
     true_spectra_test = (true_spectra_test - mean_test) / max_test
 
-    save_data_flag = False
+    save_data_flag = save_flag
     save_path = "./results/"
 
     # Load the best trained model
-    model_path = "models/pretrained/model_12262024_140651_skin_generation.pth"
+    model_path = model_path
     model = AUnet(1, 1)
     model.load_state_dict(torch.load(model_path))
     model.eval()  # Set the model to evaluation mode
@@ -122,7 +241,26 @@ if __name__ == "__main__":
     # predicted_spectra, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_spectra, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
     output_spectra = test_model(model, test_dataloader, device)
     output_spectra = output_spectra * max_test + mean_test
+    
+    data["cleaned_signals_" + process_data_type] = output_spectra
+    
+    if save_data_flag:
+        save_results = os.path.join(save_path, "results_for_skin_test.pkl")
+        with open(save_results, 'wb') as f:
+            pickle.dump(data, f)
 
-    plot_signals(data["noisy_signals"], data["cleaned_signals"], output_spectra, data["gt_signals"], data["SNR_list"])
+    # plot_signals(data["noisy_signals"], data["cleaned_signals"], output_spectra, data["gt_signals"], data["SNR_list"])
     
     print("complete. Results saved.")
+    
+    return data
+    
+
+if __name__ == "__main__":
+    model_path_from_cleaned = "models/pretrained/model_12262024_140651_skin_generation.pth"
+    model_path_from_noisy = "models/pretrained/model_12302024_095023_skin_generation_from_noisy.pth"
+    data = main(model_path=model_path_from_cleaned, process_data_type = "from_cleaned", save_flag = True)
+    data = main(model_path=model_path_from_noisy, process_data_type = "from_noisy", save_flag = True)
+    data = add_other_methods_for_comparison(data)
+    
+    plot_signals(data["noisy_signals"], data["cleaned_signals"], data["cleaned_signals_from_cleaned"], data["cleaned_signals_from_noisy"], data["gt_signals"], data["SNR_list"])

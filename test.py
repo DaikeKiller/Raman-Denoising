@@ -521,7 +521,7 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "signal_all_pV_test.jpg"))
+    plt.savefig(os.path.join(save_path, "signal_all_skin_test.jpg"))
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
@@ -533,18 +533,18 @@ def plot_signals(noisy_signals, cleaned_signals, moving_window_cleaned, noise_av
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "residual_all_pV_test.jpg"))
+    plt.savefig(os.path.join(save_path, "residual_all_skin_test.jpg"))
 
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143232.pkl"  # Test data
+    # test_dir_skin = "data/generated/generated_skin_spectrum_12302024_163025.pkl"  # Test data
     # test_noise_dir = "data/noise/processed_new/test_data.pkl"
-    # test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143219.pkl"
-    # test_noise_dir = "data/noise/processed_new/train_data.pkl"
-    test_dir_skin = "data/generated/generated_skin_spectrum_11012024_143226.pkl"
-    test_noise_dir = "data/noise/processed_new/val_data.pkl"
+    test_dir_skin = "data/generated/generated_skin_spectrum_12302024_163035.pkl"
+    test_noise_dir = "data/noise/processed_new/train_data.pkl"
+    # test_dir_skin = "data/generated/generated_skin_spectrum_12302024_163012.pkl"
+    # test_noise_dir = "data/noise/processed_new/val_data.pkl"
     
     test_dir_pV = "data/generated/raman_pesudo_Vioget_test_11182024_110755.pkl"  # Test data
     test_noise_dir = "data/noise/processed_new/test_data.pkl"
@@ -555,7 +555,7 @@ if __name__ == "__main__":
     SNR_range = [0.01, 10]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
-    save_data_flag = False
+    save_data_flag = True
     save_path = "./results/"
 
     # Load the best trained model
@@ -581,7 +581,7 @@ if __name__ == "__main__":
         test_noise = pickle.load(file)
 
     # test_signal = np.concatenate((test_signal_skin, test_signal_pV), axis=1)
-    test_signal = test_signal_pV
+    test_signal = test_signal_skin
 
     # Create Dataset and DataLoader
     test_dataset = RamanNoiseDataset(clean_signals=test_signal, true_noises=test_noise)
@@ -597,7 +597,7 @@ if __name__ == "__main__":
     if save_data_flag:
         save_data = {"noisy_signals": noisy_signals, "cleaned_signals": cleaned_signals, "moving_window_cleaned": moving_window_cleaned, \
                     "noise_avg_signals": noise_avg_signals, "gt_signals": gt_signals, "SNR_list": SNR_list}
-        save_results = os.path.join(save_path, 'results_all_pV_test.pkl')
+        save_results = os.path.join(save_path, 'results_for_skin_train.pkl')
         with open(save_results, 'wb') as f:
             pickle.dump(save_data, f)
 

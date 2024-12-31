@@ -19,7 +19,7 @@ from scipy.fftpack import idct
 def read_data(filename):
     with open(filename, 'rb') as file:
         data = pickle.load(file)
-    cleaned_signals, gt_signals = data["cleaned_signals"], data["gt_signals"]
+    cleaned_signals, gt_signals = data["noisy_signals"], data["gt_signals"]
     return cleaned_signals, gt_signals
 
 def norm(signals):
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
-    save_name = f"model_{timestamp}_skin_generation.pth"
+    save_name = f"model_{timestamp}_skin_generation_from_noisy.pth"
     save_path = os.path.join(save_dir, save_name)
     
     model = AUnet(1, 1)
