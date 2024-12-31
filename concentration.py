@@ -50,7 +50,9 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix):
     plt.tight_layout()  # Optional: Adjust subplot layout
     plt.savefig(f"results/concentrations_{filename_suffix}.jpg")
     
-    
+def get_SNR(cleaned, gt):
+    return np.max(gt, axis=1) / np.std(cleaned[:, 1440-25:1440+25] - gt[:, 1440-25:1440+25], axis=1)
+
 # signals, _, concentrations = read_clean_data("data/generated/generated_skin_spectrum_11012024_143232.pkl")
 with open("./results/results_for_skin_test.pkl", 'rb') as file:
     data = pickle.load(file)
@@ -67,18 +69,21 @@ signal_datasets = {
     "origin": signals_origin,
     "from_cleaned": signals_from_cleaned,
     "from_noisy": signals_from_noisy,
-    "SG": signals_SG,
-    "wavelet": signals_wavelet
+    # "SG": signals_SG,
+    # "wavelet": signals_wavelet
 }
 
 # Dictionary to store the results
 coeffs = {}
+SNR_improve = {}
 
 # Apply `get_concentrations` to each dataset
 for name, signals in signal_datasets.items():
     print(f"Processing {name} signals...")
     coeffs_tmp = get_concentrations(basis, signals)
     coeffs[name] = np.array(coeffs_tmp)
+    if name != "origin":
+        SNR_improve[name] = get_SNR(signals, signal_datasets["origin"]) / data["SNR_list"]
 
 with open("./results/coeffs.pkl", 'wb') as f:
     pickle.dump(coeffs, f)
@@ -88,6 +93,16 @@ SNR_ranges = [(0, 10), (0, 1), (1, 3), (3, 6), (6, 10)]
 
 for i, SNR_range in enumerate(SNR_ranges):
     plot_concentration(coeffs, data, save_names, [SNR_range], f"SNR_{SNR_range[0]}_{SNR_range[1]}")
+
+# draw SNR improvement
+plt.figure()
+origin_SNR = data["SNR_list"]
+for name, SNR in SNR_improve.items():
+    plt.scatter(origin_SNR, 10*np.log10(SNR), label=name, alpha=0.5, s=10)
+plt.legend()
+plt.xlabel("Original SNR (ratio)")
+plt.ylabel("SNR improvement (dB)")
+plt.savefig("results/SNR_improvement.jpg")
 
 # p_values = []
 # for i in range(basis.shape[1]):
