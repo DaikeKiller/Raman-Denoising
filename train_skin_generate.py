@@ -14,6 +14,7 @@ from tqdm import tqdm
 # from sklearn.model_selection import train_test_split
 # from scipy.signal import resample
 from scipy.fftpack import idct
+from scipy.signal import savgol_filter
 
 
 def read_data(filename):
@@ -21,6 +22,18 @@ def read_data(filename):
         data = pickle.load(file)
     cleaned_signals, gt_signals = data["noisy_signals"], data["gt_signals"]
     return cleaned_signals, gt_signals
+
+def apply_SG(signals, sg_params_dir):
+    with open(sg_params_dir, 'rb') as file:
+        sg_params = pickle.load(file)
+    if sg_params is not None:
+        window_length, polyorder = sg_params
+        sg_filtered_signals = np.apply_along_axis(
+            lambda spectrum: savgol_filter(spectrum, window_length=window_length, polyorder=polyorder),
+            axis=1,
+            arr=signals
+        )
+    return sg_filtered_signals
 
 def norm(signals):
     mean_ = np.mean(signals, axis=1).reshape(-1,1)
@@ -148,10 +161,12 @@ if __name__ == "__main__":
     
     filename_train = "results/results_for_skin_train.pkl"
     input_spectra_train, true_spectra_train = read_data(filename_train)
+    input_spectra_train = apply_SG(input_spectra_train, "results/best_SG_params.pkl")
     input_spectra_train, mean_train, max_train = norm(input_spectra_train)
     true_spectra_train = (true_spectra_train - mean_train) / max_train
     filename_val = "results/results_for_skin_val.pkl"
     input_spectra_val, true_spectra_val = read_data(filename_val)
+    input_spectra_val = apply_SG(input_spectra_val, "results/best_SG_params.pkl")
     input_spectra_val, mean_val, max_val = norm(input_spectra_val)
     true_spectra_val = (true_spectra_val - mean_val) / max_val
     
@@ -161,7 +176,7 @@ if __name__ == "__main__":
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
-    save_name = f"model_{timestamp}_skin_generation_from_noisy.pth"
+    save_name = f"model_{timestamp}_skin_generation_from_SG.pth"
     save_path = os.path.join(save_dir, save_name)
     
     model = AUnet(1, 1)

@@ -165,6 +165,8 @@ def apply_filters_with_tuning(train_signals, train_ground_truth, signals, dct_fl
             
         results["SG_filtered_signals"] = sg_filtered_signals
         results["SG_best_params"] = sg_params
+        with open("results/best_SG_params.pkl", "wb") as f:
+            pickle.dump(sg_params, f)
 
     # Perform Wavelet filter tuning
     wavelet_params = tune_wavelet_filter(train_signals, train_ground_truth)
@@ -188,6 +190,8 @@ def apply_filters_with_tuning(train_signals, train_ground_truth, signals, dct_fl
             
         results["Wavelet_filtered_signals"] = wavelet_filtered_signals
         results["Wavelet_best_params"] = wavelet_params
+        with open("results/best_wv_params.pkl", "wb") as f:
+            pickle.dump(wavelet_params, f)
 
     return results
 

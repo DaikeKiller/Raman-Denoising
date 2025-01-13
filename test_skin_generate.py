@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import os
 from scipy.signal import savgol_filter
 import pywt
+from train_skin_generate import apply_SG
 
 
 def read_data(filename, type="from_cleaned"):
@@ -22,6 +23,9 @@ def read_data(filename, type="from_cleaned"):
         out_signals, gt_signals = data["cleaned_signals"], data["gt_signals"]
     if type == "from_noisy":
         out_signals, gt_signals = data["noisy_signals"], data["gt_signals"]
+    if type == "from_SG":
+        out_signals, gt_signals = data["noisy_signals"], data["gt_signals"]
+        out_signals = apply_SG(out_signals, "results/best_SG_params.pkl")
     return out_signals, gt_signals, data
 
 def norm(signals):
@@ -92,7 +96,7 @@ def add_other_methods_for_comparison(data):
     
     return data
 
-def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen_from_noisy, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
+def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen_from_noisy, skin_gen_from_SG, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
     # Sort indices based on SNR_list in ascending order
     sorted_indices = np.argsort(SNR_list)
     SNR_list = np.array(SNR_list)[sorted_indices]
@@ -100,6 +104,7 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen
     cleaned_signals = np.array(cleaned_signals)[sorted_indices]
     skin_gen_from_cleaned = np.array(skin_gen_from_cleaned)[sorted_indices]
     skin_gen_from_noisy = np.array(skin_gen_from_noisy)[sorted_indices]
+    skin_gen_from_SG = np.array(skin_gen_from_SG)[sorted_indices]
     gt_signals = np.array(gt_signals)[sorted_indices]
     
     # Get the total number of signals
@@ -181,7 +186,7 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen
     plt.show()
     plt.savefig(os.path.join(save_path, "residual_skin_gen_from_noisy_all_test.jpg"))
     
-    # =========== figure for both ===============
+    # ==================== figure for only skin gen from SG ================
     fig, axs = plt.subplots(num_samples, 3, figsize=(15, num_samples * 3))
     
     for i, idx in enumerate(selected_indices):
@@ -189,8 +194,40 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen
         axs[i, 0].set_title(f"Original low-SNR spectra, SNR = {SNR_list[idx]:.2f}")
         # axs[i, 0].legend()
         
-        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation from low-SNR", color='green')
-        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation from noise removal", color='red')
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_SG[idx], label="Skin generation output", color='green')
+        axs[i, 1].set_title(f"Skin generation output")
+
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange')
+        # axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i, 2].set_title(f"Pure spectra")
+        # axs[i, 4].legend()
+
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_SG_all_test.jpg"))
+
+    fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
+    for i, idx in enumerate(selected_indices):
+        # axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_SG[idx], label="Residual_from_SG", color='black')
+        # axs[i].set_title(f"Smaple {idx}")
+        # axs[i].legend()
+    
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_SG_all_test.jpg"))
+    
+    # =========== figure for all ===============
+    fig, axs = plt.subplots(num_samples, 3, figsize=(15, num_samples * 3))
+    
+    for i, idx in enumerate(selected_indices):
+        axs[i, 0].plot(np.linspace(800, 1790, 1981), noisy_signals[idx], label="Original low-SNR spectra")
+        axs[i, 0].set_title(f"Original low-SNR spectra, SNR = {SNR_list[idx]:.2f}")
+        # axs[i, 0].legend()
+        
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation from noise_removal", color='green')
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation from low-SNR", color='red')
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_SG[idx], label="Skin generation from SG", color='blue')
         axs[i, 1].set_title(f"Skin generation output")
         axs[i, 1].legend()
 
@@ -201,19 +238,20 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen
 
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_both_all_test.jpg"))
+    plt.savefig(os.path.join(save_path, "signal_skin_gen_from_all_all_test.jpg"))
 
     fig, axs = plt.subplots(num_samples, 1, figsize=(5, num_samples * 3))
     for i, idx in enumerate(selected_indices):
         # axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
-        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_cleaned[idx], label="Residual_from_cleaned", color='red')
-        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_noisy[idx], label="Residual_from_noisy", color='black')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_cleaned[idx], label="Residual_from_noise_removal", color='green')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_noisy[idx], label="Residual_from_noisy", color='red')
+        axs[i].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - skin_gen_from_SG[idx], label="Residual_from_SG", color='black')
         # axs[i].set_title(f"Smaple {idx}")
         axs[i].legend()
         
     plt.tight_layout()
     plt.show()
-    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_both_all_test.jpg"))
+    plt.savefig(os.path.join(save_path, "residual_skin_gen_from_all_all_test.jpg"))
         
     
 def main(model_path, process_data_type = "from_cleaned", save_flag = False):
@@ -259,8 +297,10 @@ def main(model_path, process_data_type = "from_cleaned", save_flag = False):
 if __name__ == "__main__":
     model_path_from_cleaned = "models/pretrained/model_12262024_140651_skin_generation.pth"
     model_path_from_noisy = "models/pretrained/model_12302024_095023_skin_generation_from_noisy.pth"
+    model_path_from_SG = "models/pretrained/model_01132025_110850_skin_generation_from_SG.pth"
     data = main(model_path=model_path_from_cleaned, process_data_type = "from_cleaned", save_flag = True)
     data = main(model_path=model_path_from_noisy, process_data_type = "from_noisy", save_flag = True)
-    data = add_other_methods_for_comparison(data)
+    data = main(model_path=model_path_from_noisy, process_data_type = "from_SG", save_flag = True)
+    # data = add_other_methods_for_comparison(data)
     
-    plot_signals(data["noisy_signals"], data["cleaned_signals"], data["cleaned_signals_from_cleaned"], data["cleaned_signals_from_noisy"], data["gt_signals"], data["SNR_list"])
+    plot_signals(data["noisy_signals"], data["cleaned_signals"], data["cleaned_signals_from_cleaned"], data["cleaned_signals_from_noisy"], data["cleaned_signals_from_SG"], data["gt_signals"], data["SNR_list"])
