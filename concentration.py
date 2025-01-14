@@ -231,7 +231,7 @@ for name, signals in signal_datasets.items():
     print(f"Processing {name} signals...")
     coeffs_tmp = get_concentrations(basis, signals)
     coeffs[name] = np.array(coeffs_tmp)
-    if name != "origin":
+    if name != "origin" and name != "raw":
         SNR_improve[name] = get_SNR(signals, signal_datasets["origin"]) / data["SNR_list"]
 
 with open("./results/coeffs.pkl", 'wb') as f:
