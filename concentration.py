@@ -4,6 +4,7 @@ from scipy.io import loadmat
 from scipy.stats import ttest_rel
 import pandas as pd
 from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 
 
 def get_concentrations(basis, signals):
@@ -15,22 +16,23 @@ def get_concentrations(basis, signals):
         coeffs.append(coefficients)
     return coeffs
 
-def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, norm=False):
+def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
     if norm:
         coeffs_norm = {}
         for name, coeff in coeffs.items():
             coeffs_norm[name] = coeff / np.sum(coeff, axis=1).reshape(-1, 1)
         coeffs = coeffs_norm
     selected_components = list(range(7))
-    plt.figure(figsize=(20, 8))  # Optional: Adjust figure size for better layout
-    for i, selected_component in enumerate(selected_components):
-        plt.subplot(2, 4, i + 1)
-        coeffs_origin = coeffs["origin"]
-        SNR_list = data["SNR_list"]  # Assuming SNR_list is in data
-        for j , (name, coeff) in enumerate(coeffs.items()):
-            if name != "origin":
-                coeff = coeff / coeffs_origin if norm else coeff
-                for SNR_range in SNR_ranges:
+
+    for k, SNR_range in enumerate(SNR_ranges):
+        plt.figure(figsize=(20, 8))
+        for i, selected_component in enumerate(selected_components):
+            plt.subplot(2, 4, i + 1)
+            coeffs_origin = coeffs["origin"]
+            SNR_list = data["SNR_list"]  # Assuming SNR_list is in data
+            for j , (name, coeff) in enumerate(coeffs.items()):
+                if name != "origin":
+                    coeff = coeff / coeffs_origin if norm else coeff
                     mask = (SNR_list >= SNR_range[0]) & (SNR_list < SNR_range[1])
                     # Fit a linear line
                     if not norm:
@@ -39,7 +41,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                             coeff[mask, selected_component], 
                             label=f"{name} SNR {SNR_range[0]}-{SNR_range[1]}", 
                             s=SNR_list[mask] * 10,  # Scale SNR_list to adjust point size
-                            alpha=0.3 if SNR_range != (0, 1) else 0.5,  # Add transparency (0 = fully transparent, 1 = fully opaque),
+                            alpha=0.4 - 0.1*k if k != len(SNR_ranges) - 1 else 0.1,  # Add transparency (0 = fully transparent, 1 = fully opaque),
                             color=(
                                 '#1f77b4' if name == "from noise removal" else 
                                 '#ff7f0e' if name == "from noisy" else 
@@ -50,6 +52,26 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                         )
                         
                         slope, intercept = np.polyfit(coeffs_origin[mask, selected_component], coeff[mask, selected_component], 1)
+                        # Calculate R-squared value
+                        r_squared = r2_score(coeff[mask, selected_component], slope * coeffs_origin[mask, selected_component] + intercept)
+                        # poly_order = 1
+                        # while r_squared < 0 and poly_order <= 4:
+                        #     poly_coeffs = np.polyfit(coeffs_origin[mask, selected_component], coeff[mask, selected_component], poly_order)
+                        #     poly_fit = np.poly1d(poly_coeffs)
+                        #     r_squared = get_r_squared(poly_fit(coeffs_origin[mask, selected_component]), coeff[mask, selected_component])
+                        #     poly_order += 1
+                        # if r_squared < 0:
+                        #     print(f"Warning: R-squared is still negative after trying polynomial fits up to order 4 for component {selected_component} and SNR range {SNR_range}.")
+                        #     poly_order = 1
+                        #     slope = 0
+                        #     intercept = np.mean(coeff[mask, selected_component])
+                        #     r_squared = get_r_squared((slope * coeffs_origin[mask, selected_component] + intercept), \
+                        #                            coeff[mask, selected_component])
+                            
+                        #calculate MSE
+                        residuals_mse = coeff[mask, selected_component] - coeffs_origin[mask, selected_component]
+                        mse = np.mean(residuals_mse**2)
+                        # draw the line
                         line_x = np.linspace(np.min(coeffs_origin[mask, selected_component]), np.max(coeffs_origin[mask, selected_component]), 1000)
                         line_y = slope * line_x + intercept
                         color = scatter.get_facecolor()[0]
@@ -62,16 +84,22 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
                             label=None  # Prevent this plot from appearing in the legend
                         )
-                        # Calculate R-squared value
-                        residuals = coeff[mask, selected_component] - (slope * coeffs_origin[mask, selected_component] + intercept)
-                        ss_res = np.sum(residuals**2)
-                        ss_tot = np.sum((coeff[mask, selected_component] - np.mean(coeff[mask, selected_component]))**2)
-                        r_squared = 1 - (ss_res / ss_tot)
                         # Add R-squared value to the plot
                         plt.text(
                             0.95, 
                             0.05 + j * 0.05,  # Adjust vertical position to avoid overlap
                             f"$R^2$={r_squared:.2f}", 
+                            fontsize=12, 
+                            color=color,
+                            alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
+                            transform=plt.gca().transAxes,
+                            horizontalalignment='right',
+                            verticalalignment='bottom'
+                        )
+                        plt.text(
+                            0.75, 
+                            0.05 + j * 0.05,  # Adjust vertical position to avoid overlap
+                            f"$MSE$={mse*100:.2f}", 
                             fontsize=12, 
                             color=color,
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
@@ -86,7 +114,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                             coeff[mask, selected_component], 
                             label=f"{name} SNR {SNR_range[0]}-{SNR_range[1]}", 
                             s=SNR_list[mask] * 10,  # Scale SNR_list to adjust point size
-                            alpha=0.3 if SNR_range != (0, 1) else 0.5,  # Add transparency (0 = fully transparent, 1 = fully opaque),
+                            alpha=0.4 - 0.1 * k if k != len(SNR_ranges) - 1 else 0.1,  # Add transparency (0 = fully transparent, 1 = fully opaque),
                             color=(
                                 '#1f77b4' if name == "from noise removal" else 
                                 '#ff7f0e' if name == "from noisy" else 
@@ -96,19 +124,20 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                             )
                         )
                         color = scatter.get_facecolor()[0]
-                        coeff_fit = coeff * coeffs_origin
-                        slope, intercept = np.polyfit(coeffs_origin[mask, selected_component], coeff_fit[mask, selected_component], 1)
-                        # Calculate R-squared value
-                        residuals = (coeff_fit[mask, selected_component] - (slope * coeffs_origin[mask, selected_component] + intercept)) / coeffs_origin[mask, selected_component]
-                        ss_res = np.sum(residuals**2)
-                        ss_tot = np.sum((coeff_fit[mask, selected_component] / coeffs_origin[mask, selected_component] - np.mean(coeff_fit[mask, selected_component] / coeffs_origin[mask, selected_component]))**2)
-                        r_squared = 1 - (ss_res / ss_tot)
                         
+                        def inverse_fit(x, a, b):
+                            return a + b / x
+
+                        popt, pcov = curve_fit(inverse_fit, coeffs_origin[mask, selected_component], coeff[mask, selected_component])
+                        a, b = popt
+                        r_squared = r2_score(coeff[mask, selected_component], inverse_fit(coeffs_origin[mask, selected_component], a, b))
+                            
+                        # print(poly_order)
                         line_x = np.linspace(np.min(coeffs_origin[mask, selected_component]), np.max(coeffs_origin[mask, selected_component]), 1000)
-                        line_y = slope * line_x + intercept
+                        line_y = inverse_fit(line_x, a, b)
                         plt.plot(
                             line_x, 
-                            line_y / line_x, 
+                            line_y, 
                             linestyle='-', 
                             linewidth=3,
                             color=color * 0.8,  # Darken the color
@@ -120,7 +149,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                         plt.text(
                             0.95, 
                             0.05 + j * 0.05,  # Adjust vertical position to avoid overlap
-                            f"$R^2$={r_squared:.2f}", 
+                            f"$R^2$={np.floor(r_squared * 100) / 100:.2f}", 
                             fontsize=12, 
                             color=color,
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
@@ -128,32 +157,45 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, filename_suffix, no
                             horizontalalignment='right',
                             verticalalignment='bottom'
                         )
+                        
+                        # Adjust x-axis ticks to be 100 times larger
+                        ax = plt.gca()
+                        x_ticks = ax.get_xticks()
+                        ax.set_xticklabels([f"{int(x * 100)}" for x in x_ticks])
         
-        if norm:
-            plt.axhline(y=1, color='black', linestyle='--', label=None)
-        else:
-            plt.plot([0, 1], [0, 1], color='black', linestyle='--', label=None)
-        plt.xlabel("Normalized Original Concentration", fontsize=12) if norm else plt.xlabel("Original Concentration", fontsize=13)
-        plt.ylabel("Normalized predicted concentration", fontsize=12) if norm else plt.ylabel("Predicted concentration", fontsize=13)
-        plt.title(save_names[i], fontsize=14)  # Optional: Larger title font
-        plt.legend(fontsize=10)  # Optional: Add legend with adjusted font size
-        if not norm:
-            plt.xlim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set x-axis range
-            plt.ylim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set y-axis range
-        # plt.xlim(0, 1)  # Set x-axis range
-        # plt.ylim(0, 1)  # Set y-axis range
-        if norm:
-            plt.yscale("log")  # Optional: Set y-axis scale
+            if norm:
+                plt.axhline(y=1, color='black', linestyle='--', label=None)
+                plt.axhline(y=2, color='orange', linestyle='--', label=None)
+                plt.axhline(y=0.5, color='orange', linestyle='--', label=None)
+            else:
+                plt.plot([0, 1], [0, 1], color='black', linestyle='--', label=None)
+                
+            plt.xlabel("Normalized Original Concentration (%)", fontsize=12) if norm else plt.xlabel("Original Concentration", fontsize=13)
+            plt.ylabel("Accuracy", fontsize=12) if norm else plt.ylabel("Predicted concentration", fontsize=13)
+            plt.title(save_names[i], fontsize=14)  # Optional: Larger title font
+            plt.legend(fontsize=10)  # Optional: Add legend with adjusted font size
+            if not norm:
+                plt.xlim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set x-axis range
+                plt.ylim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set y-axis range
+            else:
+                # plt.xlim(0, 1)
+                plt.ylim(0.001, 1000)
+            # plt.xlim(0, 1)  # Set x-axis range
+            # plt.ylim(0, 1)  # Set y-axis range
+            if norm:
+                plt.yscale("log")  # Optional: Set y-axis scale
+            plt.tight_layout()  # Optional: Adjust subplot layout
+            
+        plt.subplot(2, 4, 8)
+        name_list = ["Collagen", "Elastin", "Triolein", "Nucleus", "Keratin", "Ceramide", "Water"]
+        for i in range(7):
+            plt.plot(np.linspace(800, 1790, 1981), basis[:,i] + i*1.5, color="black")
+        plt.xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=13)
+        plt.title("Biophysical Model Basis", fontsize=16)
+        plt.yticks([i*1.5 for i in range(7)], labels=name_list, fontsize=15)
         plt.tight_layout()  # Optional: Adjust subplot layout
-    plt.subplot(2, 4, 8)
-    name_list = ["Collagen", "Elastin", "Triolein", "Nucleus", "Keratin", "Ceramide", "Water"]
-    for i in range(7):
-        plt.plot(np.linspace(800, 1790, 1981), basis[:,i] + i*1.5, color="black")
-    plt.xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=13)
-    plt.title("Biophysical Model Basis", fontsize=16)
-    plt.yticks([i*1.5 for i in range(7)], labels=name_list, fontsize=15)
-    plt.tight_layout()  # Optional: Adjust subplot layout
-    plt.savefig(f"results/norm_concentrations_{filename_suffix}.jpg") if norm else plt.savefig(f"results/concentrations_{filename_suffix}.jpg")
+        filename_suffix = f"SNR_{SNR_range[0]}_{SNR_range[1]}"
+        plt.savefig(f"results/norm_concentrations_{filename_suffix}.jpg") if norm else plt.savefig(f"results/concentrations_{filename_suffix}.jpg")
     
 def get_SNR(cleaned, gt):
     return np.max(gt, axis=1) / np.std(cleaned[:, 1440-25:1440+25] - gt[:, 1440-25:1440+25], axis=1)
@@ -196,10 +238,10 @@ with open("./results/coeffs.pkl", 'wb') as f:
     pickle.dump(coeffs, f)
 
 save_names = ["Collagen", "Elastin", "Triolein", "Nucleus", "Keratin", "Ceramide", "Water"]
-SNR_ranges = [(0, 10), (0, 1), (1, 3), (3, 6), (6, 10)]
+SNR_ranges = [(0, 1), (1, 3), (3, 6), (6, 10), (0, 10)]
 
-for i, SNR_range in enumerate(SNR_ranges):
-    plot_concentration(coeffs, data, save_names, [SNR_range], f"SNR_{SNR_range[0]}_{SNR_range[1]}", norm=True)
+# for i, SNR_range in enumerate(SNR_ranges):
+plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False)
 
 # draw SNR improvement
 plt.figure()
