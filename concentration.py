@@ -3,8 +3,11 @@ from scipy.optimize import nnls
 from scipy.io import loadmat
 from scipy.stats import ttest_rel
 import pandas as pd
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, minimize
 from sklearn.metrics import r2_score
+from scipy.stats import linregress
+from sklearn.svm import SVR
+from sklearn.model_selection import GridSearchCV
 
 
 def get_concentrations(basis, signals):
@@ -16,12 +19,163 @@ def get_concentrations(basis, signals):
         coeffs.append(coefficients)
     return coeffs
 
+def piecewise_linear_fit(coeffs_origin, coeff, num_bins=5):
+    """
+    Perform piecewise linear fit on the input data.
+
+    Parameters:
+        coeffs_origin (array-like): Ground truth concentrations.
+        coeff (array-like): Predicted concentrations.
+        mask (array-like): Boolean mask for selecting relevant data.
+        num_bins (int): Number of bins to divide the data into.
+
+    Returns:
+        tuple:
+            line_x (np.ndarray): X values of the fitting curve.
+            line_y (np.ndarray): Y values of the fitting curve.
+    """
+    # Sort data for piecewise fitting
+    x_sorted = coeffs_origin
+    y_sorted = coeff
+    sorted_indices = np.argsort(x_sorted)
+    x_sorted = x_sorted[sorted_indices]
+    y_sorted = y_sorted[sorted_indices]
+
+    # Divide data into bins
+    bins = np.linspace(np.min(x_sorted), np.max(x_sorted), num_bins + 1)
+
+    # Piecewise linear fit
+    piecewise_fits = []
+    for i in range(len(bins) - 1):
+        # Select data within the current bin
+        bin_mask = (x_sorted >= bins[i]) & (x_sorted < bins[i + 1])
+        x_bin = x_sorted[bin_mask]
+        y_bin = y_sorted[bin_mask]
+
+        if len(x_bin) > 1:  # Ensure enough points for fitting
+            # Fit a linear model to the bin
+            slope, intercept, _, _, _ = linregress(x_bin, y_bin)
+            piecewise_fits.append((bins[i], bins[i + 1], slope, intercept))
+
+    # Create the piecewise linear function
+    def piecewise_linear(x):
+        for start, end, slope, intercept in piecewise_fits:
+            if start <= x < end:
+                return slope * x + intercept
+        return np.nan  # Return NaN for out-of-range values
+
+    # Generate the fitting curve
+    line_x = np.linspace(np.min(x_sorted), np.max(x_sorted), 1000)
+    line_y = np.array([piecewise_linear(xi) for xi in line_x])
+    
+    # Calculate R-squared
+    y_pred = np.array([piecewise_linear(xi) for xi in x_sorted])
+    ss_res = np.sum((y_sorted - y_pred) ** 2)
+    ss_tot = np.sum((y_sorted - np.mean(y_sorted)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+
+    return line_x, line_y, r_squared
+
+def svr_regression(coeffs_origin, coeff, kernel='rbf', C=1.0, epsilon=0.1):
+    """
+    Perform SVR regression on the input data.
+
+    Parameters:
+        coeffs_origin (array-like): Ground truth concentrations.
+        coeff (array-like): Predicted concentrations.
+        mask (array-like): Boolean mask for selecting relevant data.
+        kernel (str): Kernel type for SVR ('linear', 'poly', 'rbf', etc.).
+        C (float): Regularization parameter.
+        epsilon (float): Epsilon-tube within which no penalty is associated.
+
+    Returns:
+        tuple:
+            line_x (np.ndarray): X values of the SVR fit curve.
+            line_y (np.ndarray): Y values of the SVR fit curve.
+            r_squared (float): R-squared value of the SVR fit.
+    """
+    # Filter the data based on the mask
+    x = coeffs_origin.reshape(-1, 1)  # Reshape for SVR
+    y = coeff
+
+    # Initialize the SVR model
+    svr_model = SVR(kernel=kernel, C=C, epsilon=epsilon)
+
+    # Fit the SVR model
+    svr_model.fit(x, y)
+
+    # Generate predictions
+    line_x = np.linspace(np.min(x), np.max(x), 1000).reshape(-1, 1)
+    line_y = svr_model.predict(line_x)
+
+    # Calculate R-squared
+    y_pred = svr_model.predict(x)
+    ss_res = np.sum((y - y_pred) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+
+    return line_x.ravel(), line_y, r_squared
+
+def fit_custom_model(coeffs_origin, coeff):
+    """
+    Fit the model y = a + b*x^m + c/x^n to the data, optimizing m and n for the best R-squared.
+
+    Parameters:
+        coeffs_origin (array-like): Ground truth concentrations.
+        coeff (array-like): Predicted concentrations.
+        mask (array-like): Boolean mask for selecting relevant data.
+
+    Returns:
+        tuple:
+            line_x (np.ndarray): X values of the fit curve.
+            line_y (np.ndarray): Y values of the fit curve.
+            params (tuple): Parameters a, b, c, m, n of the fit.
+            r_squared (float): R-squared value of the fit.
+    """
+    # Filter the data based on the mask
+    x = coeffs_origin
+    y = coeff
+
+    # Define the custom model
+    def custom_model(x, a, b, c, m, n):
+        return a + b * (x ** m) + c / (x ** n)
+
+    # Objective function to minimize the negative R-squared
+    def objective(params):
+        a, b, c, m, n = params
+        y_pred = custom_model(x, a, b, c, m, n)
+        ss_res = np.sum((y - y_pred) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot)
+        return -r_squared  # Negative R-squared for minimization
+
+    # Initial guesses for a, b, c, m, n
+    initial_guess = [1, 1, 1, 1, 1]
+    bounds = [(None, None), (None, None), (None, None), (0, None), (0, None)]  # m > 0, n > 0
+
+    # Optimize the parameters
+    result = minimize(objective, initial_guess, bounds=bounds, method='L-BFGS-B')
+    a, b, c, m, n = result.x
+
+    # Generate the fit curve
+    line_x = np.linspace(np.min(x), np.max(x), 1000)
+    line_y = custom_model(line_x, a, b, c, m, n)
+
+    # Calculate final R-squared
+    y_pred = custom_model(x, a, b, c, m, n)
+    ss_res = np.sum((y - y_pred) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+
+    return line_x, line_y, (a, b, c, m, n), r_squared
+
 def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
     if norm:
         coeffs_norm = {}
         for name, coeff in coeffs.items():
             coeffs_norm[name] = coeff / np.sum(coeff, axis=1).reshape(-1, 1)
         coeffs = coeffs_norm
+        
     selected_components = list(range(7))
 
     for k, SNR_range in enumerate(SNR_ranges):
@@ -32,7 +186,6 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
             SNR_list = data["SNR_list"]  # Assuming SNR_list is in data
             for j , (name, coeff) in enumerate(coeffs.items()):
                 if name != "origin":
-                    coeff = coeff / coeffs_origin if norm else coeff
                     mask = (SNR_list >= SNR_range[0]) & (SNR_list < SNR_range[1])
                     # Fit a linear line
                     if not norm:
@@ -109,6 +262,9 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         )
                     # if norm
                     else:
+                        coeff = np.abs((coeff - coeffs_origin)) / coeffs_origin
+                        coeff = 10*np.log10(coeff+1)
+                        coeff[mask, selected_component] = np.abs(coeff[mask, selected_component] - coeffs_origin[mask, selected_component])
                         scatter = plt.scatter(
                             coeffs_origin[mask, selected_component], 
                             coeff[mask, selected_component], 
@@ -125,16 +281,25 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         )
                         color = scatter.get_facecolor()[0]
                         
-                        def inverse_fit(x, a, b):
-                            return a + b / x
+                        # def inverse_fit(x, a, b):
+                        #     return a + b / x
 
-                        popt, pcov = curve_fit(inverse_fit, coeffs_origin[mask, selected_component], coeff[mask, selected_component])
-                        a, b = popt
-                        r_squared = r2_score(coeff[mask, selected_component], inverse_fit(coeffs_origin[mask, selected_component], a, b))
+                        # # # Remove outliers
+                        # # residuals = coeff[mask, selected_component] - coeffs_origin[mask, selected_component]
+                        # # mean_residual = np.mean(residuals)
+                        # # std_residual = np.std(residuals)
+                        # # threshold = 3  # Define a threshold for outlier detection
+                        # # non_outliers_mask = np.abs(residuals - mean_residual) < threshold * std_residual
+
+                        # # Fit the curve without outliers
+                        # popt, pcov = curve_fit(inverse_fit, coeffs_origin[mask, selected_component], coeff[mask, selected_component])
+                        # a, b = popt
+                        # r_squared = r2_score(coeff[mask, selected_component], inverse_fit(coeffs_origin[mask, selected_component], a, b))
                             
-                        # print(poly_order)
-                        line_x = np.linspace(np.min(coeffs_origin[mask, selected_component]), np.max(coeffs_origin[mask, selected_component]), 1000)
-                        line_y = inverse_fit(line_x, a, b)
+                        # line_x = np.linspace(np.min(coeffs_origin[mask, selected_component]), np.max(coeffs_origin[mask, selected_component]), 1000)
+                        # line_y = inverse_fit(line_x, a, b)
+                        
+                        line_x, line_y, _, r_squared = fit_custom_model(coeffs_origin[mask, selected_component], coeff[mask, selected_component])
                         plt.plot(
                             line_x, 
                             line_y, 
@@ -148,7 +313,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         # Add R-squared value to the plot
                         plt.text(
                             0.95, 
-                            0.05 + j * 0.05,  # Adjust vertical position to avoid overlap
+                            0.35 + j * 0.05,  # Adjust vertical position to avoid overlap
                             f"$R^2$={np.floor(r_squared * 100) / 100:.2f}", 
                             fontsize=12, 
                             color=color,
@@ -164,26 +329,26 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         ax.set_xticklabels([f"{int(x * 100)}" for x in x_ticks])
         
             if norm:
-                plt.axhline(y=1, color='black', linestyle='--', label=None)
-                plt.axhline(y=2, color='orange', linestyle='--', label=None)
-                plt.axhline(y=0.5, color='orange', linestyle='--', label=None)
+                # plt.axhline(y=1, color='black', linestyle='--', label=None)
+                plt.axhline(y=1.5, color='black', linestyle='--', label=None, linewidth=2)
+                # plt.axhline(y=0.5, color='orange', linestyle='--', label=None)
             else:
                 plt.plot([0, 1], [0, 1], color='black', linestyle='--', label=None)
                 
             plt.xlabel("Normalized Original Concentration (%)", fontsize=12) if norm else plt.xlabel("Original Concentration", fontsize=13)
-            plt.ylabel("Accuracy", fontsize=12) if norm else plt.ylabel("Predicted concentration", fontsize=13)
+            plt.ylabel("Bias (dB)", fontsize=12) if norm else plt.ylabel("Predicted concentration", fontsize=13)
             plt.title(save_names[i], fontsize=14)  # Optional: Larger title font
             plt.legend(fontsize=10)  # Optional: Add legend with adjusted font size
             if not norm:
                 plt.xlim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set x-axis range
                 plt.ylim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set y-axis range
             else:
-                # plt.xlim(0, 1)
-                plt.ylim(0.001, 1000)
+                # plt.xlim(-0.012, 0.54)
+                plt.ylim(-5, 30)
             # plt.xlim(0, 1)  # Set x-axis range
             # plt.ylim(0, 1)  # Set y-axis range
             if norm:
-                plt.yscale("log")  # Optional: Set y-axis scale
+                plt.yscale("linear")  # Optional: Set y-axis scale
             plt.tight_layout()  # Optional: Adjust subplot layout
             
         plt.subplot(2, 4, 8)
@@ -241,7 +406,7 @@ save_names = ["Collagen", "Elastin", "Triolein", "Nucleus", "Keratin", "Ceramide
 SNR_ranges = [(0, 1), (1, 3), (3, 6), (6, 10), (0, 10)]
 
 # for i, SNR_range in enumerate(SNR_ranges):
-plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False)
+plot_concentration(coeffs, data, save_names, SNR_ranges, norm=True)
 
 # draw SNR improvement
 plt.figure()
