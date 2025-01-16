@@ -3,7 +3,7 @@ from scipy.optimize import nnls
 from scipy.io import loadmat
 from scipy.stats import ttest_rel
 import pandas as pd
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import curve_fit, minimize, root_scalar
 from sklearn.metrics import r2_score
 from scipy.stats import linregress
 from sklearn.svm import SVR
@@ -116,6 +116,10 @@ def svr_regression(coeffs_origin, coeff, kernel='rbf', C=1.0, epsilon=0.1):
 
     return line_x.ravel(), line_y, r_squared
 
+# Define the custom model
+def custom_model(x, a, b, c, m, n):
+    return a + b * (x ** m) + c / (x ** n)
+
 def fit_custom_model(coeffs_origin, coeff):
     """
     Fit the model y = a + b*x^m + c/x^n to the data, optimizing m and n for the best R-squared.
@@ -135,10 +139,6 @@ def fit_custom_model(coeffs_origin, coeff):
     # Filter the data based on the mask
     x = coeffs_origin
     y = coeff
-
-    # Define the custom model
-    def custom_model(x, a, b, c, m, n):
-        return a + b * (x ** m) + c / (x ** n)
 
     # Objective function to minimize the negative R-squared
     def objective(params):
@@ -168,6 +168,37 @@ def fit_custom_model(coeffs_origin, coeff):
     r_squared = 1 - (ss_res / ss_tot)
 
     return line_x, line_y, (a, b, c, m, n), r_squared
+
+def find_cutoff(x_data, y_data, y_threshold, tolerance=0.1):
+    """
+    Find x cutoff values based on the smallest and largest x values
+    where y is close to y_threshold.
+
+    Parameters:
+        x_data (array-like): Array of x values.
+        y_data (array-like): Array of y values corresponding to x_data.
+        y_threshold (float): Target y value to compare against.
+        tolerance (float): Tolerance for the difference between smallest and largest x.
+
+    Returns:
+        list: A list containing the x cutoff values (either one or two values).
+    """
+    # Find indices where y is close to the threshold
+    close_indices = np.where(np.abs(y_data - y_threshold) < 1e-2)[0]
+
+    if len(close_indices) == 0:
+        # No x values meet the condition
+        return []
+
+    # Find smallest and largest x values where y is close to y_threshold
+    smallest_x = x_data[close_indices[0]]
+    largest_x = x_data[close_indices[-1]]
+
+    # Determine the cutoff based on the tolerance
+    if largest_x - smallest_x < tolerance:
+        return [smallest_x]
+    else:
+        return [smallest_x, largest_x]
 
 def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
     if norm:
@@ -300,6 +331,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         # line_y = inverse_fit(line_x, a, b)
                         
                         line_x, line_y, _, r_squared = fit_custom_model(coeffs_origin[mask, selected_component], coeff[mask, selected_component])
+                        x_cutoff = find_cutoff(line_x, line_y, 1.5)
                         plt.plot(
                             line_x, 
                             line_y, 
@@ -315,6 +347,19 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                             0.95, 
                             0.35 + j * 0.05,  # Adjust vertical position to avoid overlap
                             f"$R^2$={np.floor(r_squared * 100) / 100:.2f}", 
+                            fontsize=12, 
+                            color=color,
+                            alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
+                            transform=plt.gca().transAxes,
+                            horizontalalignment='right',
+                            verticalalignment='bottom'
+                        )
+                        
+                        # Add cutoff
+                        plt.text(
+                            0.72, 
+                            0.35 + j * 0.05,  # Adjust vertical position to avoid overlap
+                            f"$cutoff$={', '.join([f'{100 * cut:.0f}%' for cut in x_cutoff])}" if len(x_cutoff) > 0 else "No cutoff", 
                             fontsize=12, 
                             color=color,
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
