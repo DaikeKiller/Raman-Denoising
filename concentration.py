@@ -158,7 +158,8 @@ def fit_custom_model(coeffs_origin, coeff):
     a, b, c, m, n = result.x
 
     # Generate the fit curve
-    line_x = np.linspace(np.min(x), np.max(x), 1000)
+    # line_x = np.linspace(np.min(x), np.max(x), 1000)
+    line_x = np.linspace(0, 100, 10000)
     line_y = custom_model(line_x, a, b, c, m, n)
 
     # Calculate final R-squared
@@ -169,7 +170,7 @@ def fit_custom_model(coeffs_origin, coeff):
 
     return line_x, line_y, (a, b, c, m, n), r_squared
 
-def find_cutoff(x_data, y_data, y_threshold, tolerance=0.1):
+def find_cutoff(x_data, y_data, y_threshold, tolerance=10):
     """
     Find x cutoff values based on the smallest and largest x values
     where y is close to y_threshold.
@@ -204,7 +205,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
     if norm:
         coeffs_norm = {}
         for name, coeff in coeffs.items():
-            coeffs_norm[name] = coeff / np.sum(coeff, axis=1).reshape(-1, 1)
+            coeffs_norm[name] = 100 * coeff / np.sum(coeff, axis=1).reshape(-1, 1)
         coeffs = coeffs_norm
         
     selected_components = list(range(7))
@@ -295,13 +296,15 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                     else:
                         coeff = np.abs((coeff - coeffs_origin)) / coeffs_origin
                         coeff = 10*np.log10(coeff+1)
-                        coeff[mask, selected_component] = np.abs(coeff[mask, selected_component] - coeffs_origin[mask, selected_component])
+                        # coeff[mask, selected_component] = np.abs(coeff[mask, selected_component] - coeffs_origin[mask, selected_component])
                         scatter = plt.scatter(
                             coeffs_origin[mask, selected_component], 
                             coeff[mask, selected_component], 
-                            label=f"{name} SNR {SNR_range[0]}-{SNR_range[1]}", 
+                            # label=f"{name} SNR {SNR_range[0]}-{SNR_range[1]}", 
                             s=SNR_list[mask] * 10,  # Scale SNR_list to adjust point size
+                            # s = 10,
                             alpha=0.4 - 0.1 * k if k != len(SNR_ranges) - 1 else 0.1,  # Add transparency (0 = fully transparent, 1 = fully opaque),
+                            # alpha = 0.3,
                             color=(
                                 '#1f77b4' if name == "from noise removal" else 
                                 '#ff7f0e' if name == "from noisy" else 
@@ -339,7 +342,8 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                             linewidth=3,
                             color=color * 0.8,  # Darken the color
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
-                            label=None  # Prevent this plot from appearing in the legend
+                            # label=None  # Prevent this plot from appearing in the legend
+                            label=f"{name} SNR {SNR_range[0]}-{SNR_range[1]}"
                         )
                         
                         # Add R-squared value to the plot
@@ -359,7 +363,7 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                         plt.text(
                             0.72, 
                             0.35 + j * 0.05,  # Adjust vertical position to avoid overlap
-                            f"$cutoff$={', '.join([f'{100 * cut:.0f}%' for cut in x_cutoff])}" if len(x_cutoff) > 0 else "No cutoff", 
+                            f"$cutoff$={', '.join([f'{1 * cut:.0f}%' for cut in x_cutoff])}" if len(x_cutoff) > 0 else "No cutoff", 
                             fontsize=12, 
                             color=color,
                             alpha=1,  # Add transparency (0 = fully transparent, 1 = fully opaque)
@@ -368,10 +372,11 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                             verticalalignment='bottom'
                         )
                         
-                        # Adjust x-axis ticks to be 100 times larger
-                        ax = plt.gca()
-                        x_ticks = ax.get_xticks()
-                        ax.set_xticklabels([f"{int(x * 100)}" for x in x_ticks])
+                        # # Adjust x-axis ticks to be 100 times larger
+                        # ax = plt.gca()
+                        # x_ticks = ax.get_xticks()
+                        # ax.set_xticklabels([f"{int(x * 100)}" for x in x_ticks])
+                        plt.xlim(-1, max(coeffs_origin[mask, selected_component])+5) 
         
             if norm:
                 # plt.axhline(y=1, color='black', linestyle='--', label=None)
@@ -380,15 +385,15 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
             else:
                 plt.plot([0, 1], [0, 1], color='black', linestyle='--', label=None)
                 
-            plt.xlabel("Normalized Original Concentration (%)", fontsize=12) if norm else plt.xlabel("Original Concentration", fontsize=13)
-            plt.ylabel("Bias (dB)", fontsize=12) if norm else plt.ylabel("Predicted concentration", fontsize=13)
+            plt.xlabel("Normalized Concentration from Pure Spectra (%)", fontsize=12) if norm else plt.xlabel("Concentration from Pure Spectra", fontsize=13)
+            plt.ylabel("Bias (dB)", fontsize=12) if norm else plt.ylabel("Concentration from Denoised Spectra", fontsize=13)
             plt.title(save_names[i], fontsize=14)  # Optional: Larger title font
             plt.legend(fontsize=10)  # Optional: Add legend with adjusted font size
             if not norm:
                 plt.xlim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set x-axis range
                 plt.ylim(min(coeffs_origin[:, selected_component])+0.1, max(coeffs_origin[:, selected_component])+0.1)  # Set y-axis range
             else:
-                # plt.xlim(-0.012, 0.54)
+                # plt.xlim(-1, max(coeffs_origin[:, selected_component])+1)  # Set x-axis range
                 plt.ylim(-5, 30)
             # plt.xlim(0, 1)  # Set x-axis range
             # plt.ylim(0, 1)  # Set y-axis range
