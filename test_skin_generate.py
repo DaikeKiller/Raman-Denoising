@@ -96,12 +96,13 @@ def add_other_methods_for_comparison(data):
     
     return data
 
-def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen_from_noisy, skin_gen_from_SG, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
+def plot_signals(noisy_signals, cleaned_signals, SG_denoised, skin_gen_from_cleaned, skin_gen_from_noisy, skin_gen_from_SG, gt_signals, SNR_list, num_samples=5, save_path="./results/"):
     # Sort indices based on SNR_list in ascending order
     sorted_indices = np.argsort(SNR_list)
     SNR_list = np.array(SNR_list)[sorted_indices]
     noisy_signals = np.array(noisy_signals)[sorted_indices]
     cleaned_signals = np.array(cleaned_signals)[sorted_indices]
+    SG_denoised = np.array(SG_denoised)[sorted_indices]
     skin_gen_from_cleaned = np.array(skin_gen_from_cleaned)[sorted_indices]
     skin_gen_from_noisy = np.array(skin_gen_from_noisy)[sorted_indices]
     skin_gen_from_SG = np.array(skin_gen_from_SG)[sorted_indices]
@@ -218,22 +219,28 @@ def plot_signals(noisy_signals, cleaned_signals, skin_gen_from_cleaned, skin_gen
     plt.savefig(os.path.join(save_path, "residual_skin_gen_from_SG_all_test.jpg"))
     
     # =========== figure for all ===============
-    fig, axs = plt.subplots(num_samples, 3, figsize=(15, num_samples * 3))
+    fig, axs = plt.subplots(num_samples, 4, figsize=(25, num_samples * 3))
     
     for i, idx in enumerate(selected_indices):
         axs[i, 0].plot(np.linspace(800, 1790, 1981), noisy_signals[idx], label="Original low-SNR spectra")
         axs[i, 0].set_title(f"Original low-SNR spectra, SNR = {SNR_list[idx]:.2f}")
         # axs[i, 0].legend()
         
-        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation from noise_removal", color='green')
-        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation from low-SNR", color='red')
-        axs[i, 1].plot(np.linspace(800, 1790, 1981), skin_gen_from_SG[idx], label="Skin generation from SG", color='blue')
-        axs[i, 1].set_title(f"Skin generation output")
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), noisy_signals[idx], label="Original low-SNR", color='red', linewidth=1)
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), SG_denoised[idx], label="SG filtered", color='blue', linewidth=2)
+        axs[i, 1].plot(np.linspace(800, 1790, 1981), cleaned_signals[idx], label="Noise Removal", color='green', linewidth=2)
+        axs[i, 1].set_title(f"Denoised output")
         axs[i, 1].legend()
+        
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), skin_gen_from_noisy[idx], label="Skin generation from low-SNR", color='red', linewidth=1)
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), skin_gen_from_SG[idx], label="Skin generation from SG", color='blue', linewidth=2)
+        axs[i, 2].plot(np.linspace(800, 1790, 1981), skin_gen_from_cleaned[idx], label="Skin generation from noise_removal", color='green', linewidth=2)
+        axs[i, 2].set_title(f"Skin generation output")
+        axs[i, 2].legend()
 
-        axs[i, 2].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange')
+        axs[i, 3].plot(np.linspace(800, 1790, 1981), gt_signals[idx], label="Pure spectra", color='orange', linewidth=2)
         # axs[i, 4].plot(np.linspace(800, 1790, 1981), gt_signals[idx] - cleaned_signals[idx], label="Residual_model", color='black')
-        axs[i, 2].set_title(f"Pure spectra")
+        axs[i, 3].set_title(f"Pure spectra")
         # axs[i, 4].legend()
 
     plt.tight_layout()
@@ -303,4 +310,5 @@ if __name__ == "__main__":
     data = main(model_path=model_path_from_noisy, process_data_type = "from_SG", save_flag = True)
     # data = add_other_methods_for_comparison(data)
     
-    plot_signals(data["noisy_signals"], data["cleaned_signals"], data["cleaned_signals_from_cleaned"], data["cleaned_signals_from_noisy"], data["cleaned_signals_from_SG"], data["gt_signals"], data["SNR_list"])
+    plot_signals(data["noisy_signals"], data["cleaned_signals"], data["SG_denoise"], data["cleaned_signals_from_cleaned"], \
+                 data["cleaned_signals_from_noisy"], data["cleaned_signals_from_SG"], data["gt_signals"], data["SNR_list"])
