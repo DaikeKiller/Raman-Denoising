@@ -228,10 +228,10 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                             s=SNR_list[mask] * 10,  # Scale SNR_list to adjust point size
                             alpha=0.4 - 0.1*k if k != len(SNR_ranges) - 1 else 0.1,  # Add transparency (0 = fully transparent, 1 = fully opaque),
                             color=(
-                                '#1f77b4' if name == "from noise removal" else 
-                                '#ff7f0e' if name == "from noisy" else 
-                                '#2ca02c' if name == "from SG" else 
-                                '#d62728' if name == "raw" else 
+                                '#1f77b4' if name == "NL-SkinGen" else 
+                                '#2ca02c' if name == "Raw-SkinGen" else 
+                                '#d62728' if name == "SG-SkinGen" else 
+                                '#ff7f0e' if name == "Raw" else 
                                 'red'  # Optional: Set color based on dataset
                             )
                         )
@@ -306,10 +306,10 @@ def plot_concentration(coeffs, data, save_names, SNR_ranges, norm=False):
                             alpha=0.4 - 0.1 * k if k != len(SNR_ranges) - 1 else 0.1,  # Add transparency (0 = fully transparent, 1 = fully opaque),
                             # alpha = 0.3,
                             color=(
-                                '#1f77b4' if name == "from noise removal" else 
-                                '#ff7f0e' if name == "from noisy" else 
-                                '#2ca02c' if name == "from SG" else 
-                                '#d62728' if name == "raw" else 
+                                '#1f77b4' if name == "NL-SkinGen" else 
+                                '#2ca02c' if name == "Raw-SkinGen" else 
+                                '#d62728' if name == "SG-SkinGen" else 
+                                '#ff7f0e' if name == "Raw" else 
                                 'red'  # Optional: Set color based on dataset
                             )
                         )
@@ -430,10 +430,10 @@ basis = basis["basis"]
 
 signal_datasets = {
     "origin": signals_origin,
-    "from noise removal": signals_from_cleaned,
-    "from noisy": signals_from_noisy,
-    "from SG": signals_SG,
-    "raw": signals_raw,
+    "NL-SkinGen": signals_from_cleaned,
+    "Raw-SkinGen": signals_from_noisy,
+    "SG-SkinGen": signals_SG,
+    "Raw": signals_raw,
     # "wavelet": signals_wavelet
 }
 
@@ -446,7 +446,7 @@ for name, signals in signal_datasets.items():
     print(f"Processing {name} signals...")
     coeffs_tmp = get_concentrations(basis, signals)
     coeffs[name] = np.array(coeffs_tmp)
-    if name != "origin" and name != "raw":
+    if name != "origin" and name != "Raw":
         SNR_improve[name] = get_SNR(signals, signal_datasets["origin"]) / data["SNR_list"]
 
 with open("./results/coeffs.pkl", 'wb') as f:
@@ -462,7 +462,14 @@ plot_concentration(coeffs, data, save_names, SNR_ranges, norm=True)
 plt.figure()
 origin_SNR = data["SNR_list"]
 for name, SNR in SNR_improve.items():
-    plt.scatter(origin_SNR, 10*np.log10(SNR), label=name, alpha=0.5, s=10)
+    plt.scatter(origin_SNR, 10*np.log10(SNR), label=name, alpha=0.5, s=10,
+                color=(
+                        '#1f77b4' if name == "NL-SkinGen" else 
+                        '#2ca02c' if name == "Raw-SkinGen" else 
+                        '#d62728' if name == "SG-SkinGen" else 
+                        '#ff7f0e' if name == "Raw" else 
+                        'red'  # Optional: Set color based on dataset
+                            ))
 plt.legend()
 plt.xlabel("Original SNR (ratio)")
 plt.ylabel("SNR improvement (dB)")
