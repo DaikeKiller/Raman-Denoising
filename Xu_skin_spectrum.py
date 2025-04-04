@@ -17,7 +17,7 @@ class SkinSimulator:
         if concentrations is None:
             if nums is None:
                 nums = 1
-            self.concentrations = np.random.rand(self.componentNum, nums)
+            self.concentrations = np.random.uniform(0, 1, (self.componentNum, nums))
         else:
             self.concentrations = np.transpose(np.array(concentrations))
             if self.concentrations.shape[0] != self.componentNum:
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     basis = loadmat("data/basics/basis_calibrated.mat")
     basis = basis["basis"]
     given_concentrations = None
-    num_to_generate = 1000 # if given_concentrations is provided, you can set this to None
+    num_to_generate = 10000 # if given_concentrations is provided, you can set this to None
     save_flag = True
     save_path = None # if this is None, the file will be saved to a default path "data/generated/"
 
@@ -98,9 +98,9 @@ if __name__ == "__main__":
     # test_con = [[0.1, 0.8, 0.6, 0.7, 0.3, 0.1, 0.9], [1, 1, 1, 1, 1, 1, 100]]
     # Generator.generate(concentrations=test_con)
     # Generator.plot()
-    Generator.plot_basis()
-    plt.show()
-    plt.savefig("./results/basis.png")
+    # Generator.plot_basis()
+    # plt.show()
+    # plt.savefig("./results/basis.png")
 
-    # [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
-    # print(spectrum.shape)
+    [concentrations, spectrum] = Generator.getData(saveFlag=save_flag, saveDir=save_path)
+    print(spectrum.shape)
