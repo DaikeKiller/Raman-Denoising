@@ -34,39 +34,9 @@ def read_clean_data(clean_dir, customized_noise=False, pV=False):
     else:
         return clean_data, noise_data, concentrations
 
-def read_noise_data(root_folder):
-    # Step 1: Load .txt files data
-    txt_data = []
-    for file in os.listdir(root_folder):
-        if file.endswith('.txt'):
-            file_path = os.path.join(root_folder, file)
-            # Read the data from the file
-            with open(file_path, 'r') as f:
-                data = f.read().strip().split()  # Adjust based on file format
-                data = [float(x) for x in data]  # Convert to float (or int, based on data)
-                # data = data[421:]
-            power = np.std(data)
-            bias = np.mean(data)
-            if power > 0:  # Avoid division by zero
-                data = (data - bias) / power
-            txt_data.append(data)  # Add the data to the list
-    # Convert list of lists to a NumPy array
-    txt_array = np.array(txt_data, dtype=np.float64)
-    # Step 2: Split data into train, val, and test sets
-    train_data, temp_data = train_test_split(txt_array, test_size=0.2, random_state=42)
-    val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
-    # Step 3: Save the test data to a pickle file
-    test_pickle_file = os.path.join(root_folder, 'test_data.pkl')
-    with open(test_pickle_file, 'wb') as f:
-        pickle.dump(test_data, f)
-    train_pickle_file = os.path.join(root_folder, 'train_data.pkl')
-    with open(train_pickle_file, 'wb') as f:
-        pickle.dump(train_data, f)
-    val_pickle_file = os.path.join(root_folder, 'val_data.pkl')
-    with open(val_pickle_file, 'wb') as f:
-        pickle.dump(val_data, f)
-    # Return the train, val, and test sets
-    return train_data, val_data
+def read_noise_data(file_name):
+    std = np.loadtxt(file_name)
+    return std
 
 def normalization_for_loss(signal):
     # Generate normalization factor tensor
@@ -84,7 +54,7 @@ def normalization_for_input(signal):
     return signal / torch.max(signal, dim=2, keepdim=True)[0]
 
 def reload_train_dataloader():
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std=noise_std)
     train_dataset.generate_noisy_signals(SNR_range=SNR_range)
     train_dataset.DCT()
     print("-------- Reloaded Dataset ---------")
@@ -257,11 +227,9 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    train_dir = "data/generated/generated_skin_spectrum_11012024_143219.pkl"
-    val_dir = "data/generated/generated_skin_spectrum_11012024_143226.pkl"
-    train_dir_pV = "data/generated/raman_pesudo_Vioget_train_11182024_110514.pkl"
-    val_dir_pV = "data/generated/raman_pesudo_Vioget_val_11182024_110718.pkl"
-    noise_dir = "data/noise/processed_new"
+    train_dir = "data/generated/pV_new_noise_model_training_05132025_181058.pkl"
+    val_dir = "data/generated/pV_new_noise_model_val_05142025_135815.pkl"
+    noise_dir = "data/noise/std/std_0.1s.txt"
     SNR_range = [0.01, 10]
 
     # Hyperparameters
@@ -294,30 +262,25 @@ if __name__ == "__main__":
     
     # train_signal_skin, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
     # val_signal_skin, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
-    train_signal_pV, _ = read_clean_data(clean_dir=train_dir_pV, customized_noise=False, pV=True)
-    val_signal_pV, _ = read_clean_data(clean_dir=val_dir_pV, customized_noise=False, pV=True)
-    train_noise, val_noise = read_noise_data(noise_dir)
-
-    # train_signal = np.concatenate((train_signal_skin, train_signal_pV), axis=1)
-    # val_signal = np.concatenate((val_signal_skin, val_signal_pV), axis=1)
-    train_signal = train_signal_pV
-    val_signal = val_signal_pV
+    train_signal, _ = read_clean_data(clean_dir=train_dir, customized_noise=False, pV=True)
+    val_signal, _ = read_clean_data(clean_dir=val_dir, customized_noise=False, pV=True)
+    noise_std = read_noise_data(noise_dir)
 
     # Create Dataset and DataLoader
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, true_noises=train_noise)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std=noise_std)
     train_dataset.generate_noisy_signals(SNR_range=SNR_range)
     train_dataset.DCT()
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    val_dataset = RamanNoiseDataset(clean_signals=val_signal, true_noises=val_noise)
+    val_dataset = RamanNoiseDataset(clean_signals=val_signal, noise_std=noise_std)
     val_dataset.generate_noisy_signals(SNR_range=SNR_range)
     val_dataset.DCT()
-    val_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
-    # train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
-    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, 400, device, save_path_LF, clip="low")
+    train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, num_epochs, device, save_path_HF, clip="high")
+    train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, num_epochs, device, save_path_MF, clip="mid")
+    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
 
     # plt.figure
     # plt.subplot(3,1,1)

@@ -178,16 +178,16 @@ class RamanGenerator:
 
 if __name__ == "__main__":
     save_path = "data/generated"
-    save_name = "raman_pesudo_Vioget_test"
+    save_name = "pV_new_noise_model_val"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
     file_name = save_name + "_" + timestamp + ".pkl"
     save_name = os.path.join(save_path, file_name)
     num_spectra = 1000
     max_peak_num = 30
-    spectra_range = (800, 1800)
+    spectra_range = (600, 1790)
     amplitude_range = (0.05, 1.0)
-    num_datapt = 1981
-    fwhm_range = (10, 200) 
+    num_datapt = 693
+    fwhm_range = (10, 200)
     noise_level = 0 
     save_flag = True
 

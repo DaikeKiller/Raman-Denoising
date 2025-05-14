@@ -3,41 +3,94 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 import scipy.stats as st
+from scipy.io import loadmat
+from scipy.ndimage import gaussian_filter1d
+import pandas as pd
 
-# Define the paths
-base_folder = "data/noise"
-folders = ["0.1s", "0.2s", "0.5s", "1s"]
-output_folder = os.path.join(base_folder, "processed_new_noise_model")
 
-# # Create the output folder if it doesn't exist
-# os.makedirs(output_folder, exist_ok=True)
+def get_res_curve():
+    # file + sheet
+    file  = 'data/basics/SRM 2246 certified log normal calculations.xls'
+    sheet = 'SRM 2246 Example'
 
-# # Process each folder
-# for folder in folders:
-#     folder_path = os.path.join(base_folder, folder)
-#     output_subfolder = output_folder
-#     os.makedirs(output_subfolder, exist_ok=True)
+    # we want rows 12–3335 (1-based) in cols D and I ⇒ zero-based skiprows=11, nrows=3335-11=3324
+    # usecols='D,I' pulls in exactly those two columns
+    df = pd.read_excel(
+        file,
+        sheet_name=sheet,
+        header=None,        # no header row in our slice
+        skiprows=11,        # drop rows 0–10 (i.e. Excel rows 1–11)
+        nrows=3324,         # rows 12 through 3335 inclusive
+        usecols='D,I'       # only columns D and I
+    )
 
-#     # Get all .txt files in the folder and sort them
-#     txt_files = sorted([f for f in os.listdir(folder_path) if f.endswith(".txt")])
+    # now df.iloc[:,0] is the D12:D3335 range, df.iloc[:,1] is I12:I3335
+    wvn_srm = df.iloc[:, 0].to_numpy()
+    i_srm   = df.iloc[:, 1].to_numpy()
+    # load wvn
+    wvn = loadmat("data/wvn_raw.mat")["wvn"].reshape(-1)
+    # interp SRM_interp
+    i_srm_interp = np.interp(wvn, wvn_srm, i_srm)
+    # load NIST data
+    nist = np.loadtxt("data/basics/NIST_0.1s.txt")
+    dark = np.loadtxt("data/basics/dark_0.1s.txt")
+    nist = nist - dark
+    # norm NIST data and SRM_interp
+    nist = nist / np.max(nist)
+    i_srm_interp = i_srm_interp / np.max(i_srm_interp)
+    # get res_curve
+    out = gaussian_filter1d(i_srm_interp / nist, sigma=15, mode='nearest')
+    hahal = loadmat("data/basics/resp_curve_confocal_interp_10272015.mat")["resp_curve_confocal_interp"].reshape(-1)
+    return out
 
-#     # Subtract consecutive files
-#     for i in range(len(txt_files) - 1):
-#         file1_path = os.path.join(folder_path, txt_files[i])
-#         file2_path = os.path.join(folder_path, txt_files[i + 1]) if i + 1 < len(txt_files) else os.path.join(folder_path, txt_files[0])
+def resp_cali(data, res_curve):
+    data = data * res_curve
+    return data[331:]
 
-#         # Load the data from the files
-#         data1 = np.loadtxt(file1_path)
-#         data2 = np.loadtxt(file2_path)
+def pre_processing(base_folder):
+    # Define the paths
+    folders = ["0.1s", "0.2s", "0.5s", "1s"]
+    # output_folder = os.path.join(base_folder, "processed_new_noise_model")
 
-#         # Subtract the data
-#         result = data1 - data2
+    # # Create the output folder if it doesn't exist
+    # os.makedirs(output_folder, exist_ok=True)
+    
+    # get calibration curve
+    res_curve = get_res_curve()
 
-#         # Save the result to a new file
-#         output_file = os.path.join(output_subfolder, txt_files[i])
-#         np.savetxt(output_file, result, fmt="%.6f")
+    # Process each folder
+    for folder in folders:
+        folder_path = os.path.join(base_folder, folder)
+        # output_subfolder = output_folder
+        # os.makedirs(output_subfolder, exist_ok=True)
 
-# print("Processing complete. Files saved in 'processed_new_noise_model'.")
+        # Get all .txt files in the folder and sort them
+        txt_files = sorted([f for f in os.listdir(folder_path) if f.endswith(".txt")])
+        
+        data_all = []
+        # pipeline
+        for i in range(len(txt_files) - 1):
+            file_path = os.path.join(folder_path, txt_files[i])
+
+            # Load the data from the files
+            data = np.loadtxt(file_path)
+
+            # system resposnse calibration
+            data_res = resp_cali(data, res_curve)
+            data_all.append(data_res)
+            
+            # # Save the result to a new file
+            # output_file = os.path.join(output_subfolder, txt_files[i])
+            # np.savetxt(output_file, result, fmt="%.6f")
+        
+        # get std
+        data_all = np.array(data_all)
+        std = np.std(data_all, axis=0)
+        folder_path = "data/noise/std"
+        os.makedirs(folder_path, exist_ok=True)
+        save_path = os.path.join(folder_path, f"std_{folder}.txt")
+        np.savetxt(save_path, std, fmt="%.6f")
+
 
 # Function to validate if the each wavenumber is a Gaussian
 def plot_and_average(output_folder, integration_time, num_samples=100):
@@ -123,20 +176,39 @@ def validate_gaussian(output_folder, integration_time):
     plt.savefig(os.path.join("tmp", f"normtest_{integration_time}.png"))
     plt.close()
 
-# Plot and calculate average for each integration time
-res = []
-times = ["0.1s", "0.2s", "0.5s", "1s"]
-for integration_time in times:
-    avg = plot_and_average(output_folder, integration_time)
-    res.append(avg)
-plt.figure()
-for i, spec in enumerate(res):
-    plt.plot(spec + 5 * i, label=times[i])  # Plot the average with a slight offset
-plt.legend()
-plt.savefig(os.path.join("tmp", "all_averages.png"))
 
-plt.figure()
-# Validate Gaussian distribution for each integration time
-for integration_time in times:
-    validate_gaussian(output_folder, integration_time)
-plt.savefig(os.path.join("tmp", "distributions.png"))
+if __name__ == "__main__":
+    # Define the base folder containing the data
+    base_folder = "data/noise"
+    
+    # Pre-process the data
+    pre_processing(base_folder)
+    
+    # Plot and calculate average for each integration time
+    # res = []
+    # times = ["0.1s", "0.2s", "0.5s", "1s"]
+    # for integration_time in times:
+    #     avg = plot_and_average(output_folder, integration_time)
+    #     res.append(avg)
+    # plt.figure()
+    # for i, spec in enumerate(res):
+    #     plt.plot(spec + 5 * i, label=times[i])  # Plot the average with a slight offset
+    # plt.legend()
+    # plt.savefig(os.path.join("tmp", "all_averages.png"))
+    # # Plot and calculate average for each integration time
+    # res = []
+    # times = ["0.1s", "0.2s", "0.5s", "1s"]
+    # for integration_time in times:
+    #     avg = plot_and_average(output_folder, integration_time)
+    #     res.append(avg)
+    # plt.figure()
+    # for i, spec in enumerate(res):
+    #     plt.plot(spec + 5 * i, label=times[i])  # Plot the average with a slight offset
+    # plt.legend()
+    # plt.savefig(os.path.join("tmp", "all_averages.png"))
+
+    # plt.figure()
+    # # Validate Gaussian distribution for each integration time
+    # for integration_time in times:
+    #     validate_gaussian(output_folder, integration_time)
+    # plt.savefig(os.path.join("tmp", "distributions.png"))
