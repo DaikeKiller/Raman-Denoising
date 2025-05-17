@@ -123,6 +123,9 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 gt_signal_dct_norm = gt_signal_dct_norm[:,:,:51]
             elif clip != "full":
                 Warning("please input a valid string to the param *clip")
+            elif clip is None:
+                noisy_signal_dct_norm = noisy_signal_dct_norm
+                gt_signal_dct_norm = gt_signal_dct_norm
             
             # # center the signal
             # centered = torch.mean(noisy_signal, dim=2, keepdim=True)
@@ -148,7 +151,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             # Regularize the mean difference between output and ground truth
             mean_reg_loss = (pred_idct.mean() - gt_idct.mean()) ** 2
 
-            loss = 1000 * loss_ + 10 * mean_reg_loss
+            loss = 1000 * loss_ + 0 * mean_reg_loss
 
             # Backward pass and optimization
             loss.backward()
@@ -165,19 +168,20 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
         gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
 
-        plt.figure()
-        plt.subplot(1,2,1)
-        plt.plot(outputs_plot, label="predicted noise dct")
-        plt.plot(noisy_signal_dct_norm_plot, label="noisy signal dct")
-        plt.legend()
-        plt.subplot(1,2,2)
-        plt.plot(pred_idct_plot, label="predicted signal")
-        plt.plot(gt_idct_plot, label="ground truth")
-        plt.legend()
-        plt.title(f"Epoch {epoch+1}/{num_epochs}")
-        plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
-        plt.close()
-        
+        if epoch % 10 == 0:
+            plt.figure()
+            plt.subplot(1,2,1)
+            plt.plot(outputs_plot, label="predicted noise dct")
+            plt.plot(noisy_signal_dct_norm_plot, label="noisy signal dct")
+            plt.legend()
+            plt.subplot(1,2,2)
+            plt.plot(pred_idct_plot, label="predicted signal")
+            plt.plot(gt_idct_plot, label="ground truth")
+            plt.legend()
+            plt.title(f"Epoch {epoch+1}/{num_epochs}")
+            plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
+            plt.close()
+            
         # Validation Phase
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
@@ -229,25 +233,26 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 # Regularize the mean difference between output and ground truth
                 mean_reg_loss = (pred_idct.mean() - gt_idct.mean()) ** 2
 
-                loss = 1000 * loss_ + 10 * mean_reg_loss
+                loss = 1000 * loss_ + 0 * mean_reg_loss
 
                 running_val_loss += loss.item()
 
         avg_val_loss = running_val_loss / len(val_dataloader)
         val_losses.append(avg_val_loss)
         # plot the process
-        plt.figure()
-        plt.subplot(1,2,1)
-        plt.plot(outputs[0, 0, :], label="predicted noise dct")
-        plt.plot(noisy_signal_dct_norm[0, 0, :], label="noisy signal dct")
-        plt.legend()
-        plt.subplot(1,2,2)
-        plt.plot(pred_idct[0, 0, :], label="predicted signal")
-        plt.plot(gt_idct[0, 0, :], label="ground truth")
-        plt.legend()
-        plt.title(f"Epoch {epoch+1}/{num_epochs}")
-        plt.savefig(f"tmp/test_epoch_{epoch+1}.jpg")
-        plt.close()
+        if epoch % 10 == 0:
+            plt.figure()
+            plt.subplot(1,2,1)
+            plt.plot(outputs[0, 0, :], label="predicted noise dct")
+            plt.plot(noisy_signal_dct_norm[0, 0, :], label="noisy signal dct")
+            plt.legend()
+            plt.subplot(1,2,2)
+            plt.plot(pred_idct[0, 0, :], label="predicted signal")
+            plt.plot(gt_idct[0, 0, :], label="ground truth")
+            plt.legend()
+            plt.title(f"Epoch {epoch+1}/{num_epochs}")
+            plt.savefig(f"tmp/test_epoch_{epoch+1}.jpg")
+            plt.close()
 
         # Check if this is the best validation loss and save the model
         if avg_val_loss < best_val_loss:
@@ -275,6 +280,7 @@ if __name__ == "__main__":
     learning_rate_HF = 2e-5
     learning_rate_MF = 2e-4
     learning_rate_LF = 2e-5
+    learning_rate_full = 2e-4
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
@@ -284,6 +290,8 @@ if __name__ == "__main__":
     save_path_MF = os.path.join(save_dir, save_name_MF)
     save_name_LF = f"new_noise_model_{timestamp}_LF.pth"
     save_path_LF = os.path.join(save_dir, save_name_LF)
+    save_name_full = f"new_noise_model_{timestamp}_full.pth"
+    save_path_full = os.path.join(save_dir, save_name_full)
 
     # Initialize model, loss function, and optimizer
     # model = RamanNoiseNet()
@@ -296,6 +304,9 @@ if __name__ == "__main__":
     model_LF = AUnet(1, 1)
     criterion_LF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF)
+    model_full = AUnet(1, 1)
+    criterion_full = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
+    optimizer_full = optim.Adam(model_full.parameters(), lr=learning_rate_full)
     
     # train_signal_skin, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
     # val_signal_skin, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
@@ -322,7 +333,8 @@ if __name__ == "__main__":
     # Train the model
     # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, 50, device, save_path_HF, clip="high")
     # train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, 20, device, save_path_MF, clip="mid")
-    train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
+    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
+    train_loss_full, val_loss_full = train_model(model_full, train_dataloader, val_dataloader, criterion_full, optimizer_full, num_epochs, device, save_path_full, clip=None)
 
     # plt.figure
     # plt.subplot(3,1,1)
@@ -348,3 +360,12 @@ if __name__ == "__main__":
     # plt.title("Low Frequency")
     # plt.show()
     # plt.savefig("results/training_loss.jpg")
+    
+    plt.figure
+    plt.plot(range(num_epochs), train_loss_full)
+    plt.plot(range(num_epochs), val_loss_full)
+    plt.legend(["train loss", "validation loss"])
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.title("Full Frequency")
+    plt.savefig("results/training_loss_full.jpg")

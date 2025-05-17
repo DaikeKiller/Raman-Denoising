@@ -185,6 +185,86 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
     
     return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times
 
+# Function to test the model and clean the signals
+def test_model_full(model_full, test_dataloader, device):
+    model_full.to(device)
+    model_full.eval()  # Set the model to evaluation mode
+    
+    predicted_noises = []
+    cleaned_signals = []
+    noisy_signals = []
+    true_noises = []
+    gt_signals = []
+    SNR_list = []
+    int_time_list = []
+    
+    with torch.no_grad():  # Disable gradient calculation for testing
+        # Progress bar for testing phase
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time in tqdm(test_dataloader, desc="Testing", unit="batch"):
+
+            noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
+            noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
+            gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
+            # get the max of the noisy_signal
+            max_values = noisy_signal.max(dim=2, keepdim=True)[0]
+            noisy_signal_dct_norm = noisy_signal_dct / max_values
+            # true_noise_np = true_noise.squeeze(1).cpu().numpy()
+            # gt_signal = target_signal.squeeze(1).cpu().numpy()
+            # noisy_signal_np = noisy_signal.squeeze(1).cpu().numpy()
+
+            # HF_center_factor = torch.mean(noisy_signal_HF, dim=2, keepdim=True)
+            # MF_center_factor = torch.mean(noisy_signal_MF, dim=2, keepdim=True)
+            # LF_center_factor = torch.mean(noisy_signal_LF, dim=2, keepdim=True)
+            # noisy_signal_HF = noisy_signal_HF - HF_center_factor
+            # noisy_signal_MF = noisy_signal_MF - MF_center_factor
+            # noisy_signal_LF = noisy_signal_LF - LF_center_factor
+
+            predicted_noise_dct = model_full(noisy_signal_dct_norm).squeeze(1).cpu().numpy() * max_values.squeeze(1).cpu().numpy()
+
+            # predicted_noise[:,:50] = true_noise_np[:,:50] # !!!!!test******
+
+            predicted_noise = idct(predicted_noise_dct, type=2, norm='ortho', axis=1)
+            
+            # Subtract predicted noise from noisy signal to clean the signal
+            cleaned_signal_dct = noisy_signal_dct.squeeze(1).cpu().numpy() - predicted_noise_dct
+            cleaned_signal = noisy_signal.squeeze(1).cpu().numpy() - predicted_noise
+            # remove_num = 5 # to deal with zero-point spike
+            # cleaned_signal[:,:remove_num] = cleaned_signal[:,remove_num:remove_num*2]
+
+            # cleaned_signal = als_baseline_correction(cleaned_signal, lam=1e8, p=0.001, n_iter=10)
+            # cleaned_signal = rolling_ball_baseline(cleaned_signal, window_size=200)
+            # cleaned_signal = bilateral_cdf(cleaned_signal)
+            # cleaned_signal[:,0] = cleaned_signal[:,1]
+
+            # cleaned_signal[cleaned_signal < 0.05] = 0
+
+            true_noise_dct = noisy_signal_dct.squeeze(1).cpu().numpy() - gt_signal_dct.squeeze(1).cpu().numpy()
+            true_noise = idct(true_noise_dct, type=2, norm='ortho', axis=1)
+            gt_signal = idct(gt_signal_dct.squeeze(1).cpu().numpy(), type=2, norm='ortho', axis=1)
+            
+            # Store the results
+            predicted_noises.append(predicted_noise)
+            cleaned_signals.append(cleaned_signal)
+            noisy_signals.append(noisy_signal.squeeze(1).cpu().numpy())
+            true_noises.append(true_noise)
+            gt_signals.append(gt_signal)
+            SNR_list.append(SNR)
+            int_time_list.append(int_time)
+
+        # Concatenate results into numpy arrays
+        predicted_noises = np.concatenate(predicted_noises, axis=0)
+        cleaned_signals = np.concatenate(cleaned_signals, axis=0)
+        noisy_signals = np.concatenate(noisy_signals, axis=0)
+        true_noises = np.concatenate(true_noises, axis=0)
+        gt_signals = np.concatenate(gt_signals, axis=0)
+        SNR_list = np.concatenate(SNR_list, axis=0)
+        int_times = np.concatenate(int_time_list, axis=0)
+
+
+        # cleaned_signals = cleaned_signals / np.max(cleaned_signals, axis=1).reshape(-1, 1)
+    
+    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times
+
 def als_baseline_correction(spectra, lam=1e6, p=0.001, n_iter=10):
     """
     Perform Asymmetric Least Squares (ALS) baseline correction on a set of spectra.
@@ -511,9 +591,12 @@ if __name__ == "__main__":
     model_HF.eval()  # Set the model to evaluation mode
     model_LF_path = "models/pretrained/new_noise_model_05162025_093651_LF.pth"
     model_LF = AUnet(1, 1)
-    # model_LF = RamanNoiseNet_LF()
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
+    model_full_path = "models/pretrained/new_noise_model_05162025_191704_full.pth"
+    model_full = AUnet(1, 1)
+    model_full.load_state_dict(torch.load(model_full_path))
+    model_full.eval()  # Set the model to evaluation mode
 
     # Load test data
     test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
@@ -533,12 +616,12 @@ if __name__ == "__main__":
 
     # Test the model and get predicted noises and cleaned signals
     # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
-    predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    # predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list = test_model_full(model_full, test_dataloader, device)
 
     # save
     if save_data_flag:
-        save_data = {"noisy_signals": noisy_signals, "cleaned_signals": cleaned_signals, "moving_window_cleaned": moving_window_cleaned, \
-                    "noise_avg_signals": noise_avg_signals, "gt_signals": gt_signals, "SNR_list": SNR_list}
+        save_data = {"noisy_signals": noisy_signals, "cleaned_signals": cleaned_signals, "gt_signals": gt_signals, "SNR_list": SNR_list}
         save_results = os.path.join(save_path, 'results_for_skin_train.pkl')
         with open(save_results, 'wb') as f:
             pickle.dump(save_data, f)
