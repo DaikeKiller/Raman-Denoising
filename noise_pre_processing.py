@@ -40,7 +40,6 @@ def get_res_curve():
     i_srm_interp = i_srm_interp / np.max(i_srm_interp)
     # get res_curve
     out = gaussian_filter1d(i_srm_interp / nist, sigma=15, mode='nearest')
-    hahal = loadmat("data/basics/resp_curve_confocal_interp_10272015.mat")["resp_curve_confocal_interp"].reshape(-1)
     return out
 
 def resp_cali(data, res_curve):
