@@ -110,10 +110,11 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
     gt_signals = []
     SNR_list = []
     int_time_list = []
+    r2f_list = []
     
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time in tqdm(test_dataloader, desc="Testing", unit="batch"):
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
@@ -170,6 +171,7 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
             gt_signals.append(gt_signal)
             SNR_list.append(SNR)
             int_time_list.append(int_time)
+            r2f_list.append(r2f)
 
         # Concatenate results into numpy arrays
         predicted_noises = np.concatenate(predicted_noises, axis=0)
@@ -179,11 +181,12 @@ def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
         gt_signals = np.concatenate(gt_signals, axis=0)
         SNR_list = np.concatenate(SNR_list, axis=0)
         int_times = np.concatenate(int_time_list, axis=0)
+        r2fs = np.concatenate(r2f_list, axis=0)
 
 
         # cleaned_signals = cleaned_signals / np.max(cleaned_signals, axis=1).reshape(-1, 1)
     
-    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times
+    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times, r2fs
 
 # Function to test the model and clean the signals
 def test_model_full(model_full, test_dataloader, device):
@@ -197,10 +200,11 @@ def test_model_full(model_full, test_dataloader, device):
     gt_signals = []
     SNR_list = []
     int_time_list = []
+    r2f_list = []
     
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time in tqdm(test_dataloader, desc="Testing", unit="batch"):
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
@@ -250,6 +254,7 @@ def test_model_full(model_full, test_dataloader, device):
             gt_signals.append(gt_signal)
             SNR_list.append(SNR)
             int_time_list.append(int_time)
+            r2f_list.append(r2f)
 
         # Concatenate results into numpy arrays
         predicted_noises = np.concatenate(predicted_noises, axis=0)
@@ -259,11 +264,12 @@ def test_model_full(model_full, test_dataloader, device):
         gt_signals = np.concatenate(gt_signals, axis=0)
         SNR_list = np.concatenate(SNR_list, axis=0)
         int_times = np.concatenate(int_time_list, axis=0)
+        r2fs = np.concatenate(r2f_list, axis=0)
 
 
         # cleaned_signals = cleaned_signals / np.max(cleaned_signals, axis=1).reshape(-1, 1)
     
-    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times
+    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times, r2fs
 
 def als_baseline_correction(spectra, lam=1e6, p=0.001, n_iter=10):
     """
@@ -509,7 +515,7 @@ def test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device):
     
     return predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list
 
-def plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, int_time_list, num_samples=5, save_path="./tmp/"):
+def plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, int_time_list, r2f_list, num_samples=5, save_path="./tmp/"):
     # Sort indices based on SNR_list in ascending order
     sorted_indices = np.argsort(SNR_list)
     SNR_list = np.array(SNR_list)[sorted_indices]
@@ -571,10 +577,12 @@ if __name__ == "__main__":
 
     test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
     test_noise_dir = "data/noise/std"
+    fluo_test_dir = "data/generated/pV_new_noise_model_test_fluorescence_05172025_083817.pkl"
     # test_dir_skin = "data/generated/generated_skin_spectrum_12302024_163012.pkl"
     # test_noise_dir = "data/noise/processed_new/val_data.pkl"
     
     SNR_range = [0.01, 10]
+    r2f_range = [0.1, 0.5]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
     save_data_flag = False
@@ -593,13 +601,14 @@ if __name__ == "__main__":
     model_LF = AUnet(1, 1)
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
-    model_full_path = "models/pretrained/new_noise_model_05162025_191704_full.pth"
+    model_full_path = "models/pretrained/new_noise_model_05172025_095134_full_with_fluo_in_noise.pth"
     model_full = AUnet(1, 1)
     model_full.load_state_dict(torch.load(model_full_path))
     model_full.eval()  # Set the model to evaluation mode
 
     # Load test data
     test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
+    fluo_test_signal, _ = read_clean_data(clean_dir=fluo_test_dir, customized_noise=False, pV=True)
     
     noise_std_dict = {}
     txt_files = glob.glob(os.path.join(test_noise_dir, "*.txt"))
@@ -609,15 +618,15 @@ if __name__ == "__main__":
         noise_std_dict[key] = std
 
     # Create Dataset and DataLoader
-    test_dataset = RamanNoiseDataset(clean_signals=test_signal, noise_std_list=noise_std_dict)
-    test_dataset.generate_noisy_signals(SNR_range=SNR_range)
+    test_dataset = RamanNoiseDataset(clean_signals=test_signal, noise_std_list=noise_std_dict, fluorescence=fluo_test_signal)
+    test_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     test_dataset.DCT()  # Apply DCT on the test data
     test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
     # Test the model and get predicted noises and cleaned signals
     # predicted_noises, cleaned_signals, noisy_signals, moving_window_cleaned, noise_avg_signals, true_noises, gt_signals, SNR_list = test_on_one_signal(model_HF, model_MF, model_LF, test_dataloader, device)
     # predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list = test_model(model_HF, model_MF, model_LF, test_dataloader, device)
-    predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list = test_model_full(model_full, test_dataloader, device)
+    predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_time_list, r2f_list = test_model_full(model_full, test_dataloader, device)
 
     # save
     if save_data_flag:
@@ -626,7 +635,7 @@ if __name__ == "__main__":
         with open(save_results, 'wb') as f:
             pickle.dump(save_data, f)
 
-    plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, int_time_list, num_samples=5)
+    plot_signals(noisy_signals, cleaned_signals, gt_signals, SNR_list, int_time_list, r2f_list, num_samples=5)
 
     print("Testing complete. Results saved.")
 

@@ -125,15 +125,16 @@ class RamanGenerator:
             amplitudes = np.random.uniform(amplitude_range[0], amplitude_range[1], num_peaks)
             fwhms = np.random.uniform(fwhm_range[0], fwhm_range[1], num_peaks)
 
-            for j in range(num_peaks):
-                if (peak_positions[j] + 1.5*fwhms[j] < spectra_range[1]) and (peak_positions[j] - 1.5*fwhms[j] > spectra_range[0]):
-                    valid_spectrum = True
-                else:
-                    valid_spectrum = False
-                    break
-            
-            if not valid_spectrum:
-                continue
+            if max_peak_num >= 3:
+                for j in range(num_peaks):
+                    if (peak_positions[j] + 1.5*fwhms[j] < spectra_range[1]) and (peak_positions[j] - 1.5*fwhms[j] > spectra_range[0]):
+                        valid_spectrum = True
+                    else:
+                        valid_spectrum = False
+                        break
+                
+                if not valid_spectrum:
+                    continue
 
             params = {
                 'peak_positions': peak_positions,
@@ -178,21 +179,26 @@ class RamanGenerator:
 
 if __name__ == "__main__":
     save_path = "data/generated"
-    save_name = "pV_new_noise_model_val"
+    save_name = "pV_new_noise_model_test_fluorescence"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
     file_name = save_name + "_" + timestamp + ".pkl"
-    save_name = os.path.join(save_path, file_name)
+    save_final = os.path.join(save_path, file_name)
     num_spectra = 1000
-    max_peak_num = 30
+    # max_peak_num = 30
+    # spectra_range = (600, 1790)
+    # amplitude_range = (0.05, 1.0)
+    # num_datapt = 693
+    # fwhm_range = (10, 200)
+    max_peak_num = 2
     spectra_range = (600, 1790)
     amplitude_range = (0.05, 1.0)
     num_datapt = 693
-    fwhm_range = (10, 200)
+    fwhm_range = (800, 1190)
     noise_level = 0 
     save_flag = True
 
     generator = RamanGenerator()
     generator.generate_multiple_spectra(num_spectra=num_spectra, max_peak_num=max_peak_num, spectra_range=spectra_range, amplitude_range=amplitude_range, \
-                                        num_datapt=num_datapt, fwhm_range=fwhm_range, noise_level=noise_level, save_flag=save_flag, save_path=save_name)
+                                        num_datapt=num_datapt, fwhm_range=fwhm_range, noise_level=noise_level, save_flag=save_flag, save_path=save_final)
     generator.plot()
-    plt.show()
+    plt.savefig(os.path.join("results", save_name + ".png"))

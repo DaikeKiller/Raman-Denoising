@@ -38,20 +38,20 @@ def read_noise_data(file_name):
     std = np.loadtxt(file_name)
     return std
 
-def normalization_for_loss(signal):
-    # Generate normalization factor tensor
-    # factor = [np.log(50*a) / (8*np.log(50)) for a in range(1, signal.shape[2]+1)]
-    factor = [0.5*(a+10) for a in range(1, signal.shape[2]+1)]
-    factor = np.array(factor)
-    factor = torch.from_numpy(np.reshape(factor, [1, 1, -1])).float()
+# def normalization_for_loss(signal):
+#     # Generate normalization factor tensor
+#     # factor = [np.log(50*a) / (8*np.log(50)) for a in range(1, signal.shape[2]+1)]
+#     factor = [0.5*(a+10) for a in range(1, signal.shape[2]+1)]
+#     factor = np.array(factor)
+#     factor = torch.from_numpy(np.reshape(factor, [1, 1, -1])).float()
 
-    # Move the factor to the same device as the signal
-    factor = factor.to(signal.device)
-    return signal * factor
+#     # Move the factor to the same device as the signal
+#     factor = factor.to(signal.device)
+#     return signal * factor
 
-def normalization_for_input(signal):
-    # shape (batch_size, 1, signal_length)
-    return signal / torch.max(signal, dim=2, keepdim=True)[0]
+# def normalization_for_input(signal):
+#     # shape (batch_size, 1, signal_length)
+#     return signal / torch.max(signal, dim=2, keepdim=True)[0]
 
 def reload_train_dataloader():
     train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict)
@@ -102,7 +102,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch+1}/{num_epochs} Training', unit="batch")
 
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _ in progress_bar:
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _, _ in progress_bar:
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
@@ -186,7 +186,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
         with torch.no_grad():  # Disable gradient calculation for validation
-            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _ in progress_bar:
+            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _, _ in progress_bar:
                 # Move data to the appropriate device
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
                 noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
@@ -270,12 +270,15 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     train_dir = "data/generated/pV_new_noise_model_training_05132025_181058.pkl"
+    fluo_train_dir = "data/generated/pV_new_noise_model_train_fluorescence_05172025_083743.pkl"
     val_dir = "data/generated/pV_new_noise_model_val_05142025_135815.pkl"
+    fluo_val_dir = "data/generated/pV_new_noise_model_val_fluorescence_05172025_083419.pkl"
     noise_dir = "data/noise/std"
     SNR_range = [0.01, 10]
+    r2f_range = [0.01, 0.5]
 
     # Hyperparameters
-    num_epochs = 400
+    num_epochs = 200
     batch_size = 32
     learning_rate_HF = 2e-5
     learning_rate_MF = 2e-4
@@ -290,7 +293,7 @@ if __name__ == "__main__":
     save_path_MF = os.path.join(save_dir, save_name_MF)
     save_name_LF = f"new_noise_model_{timestamp}_LF.pth"
     save_path_LF = os.path.join(save_dir, save_name_LF)
-    save_name_full = f"new_noise_model_{timestamp}_full.pth"
+    save_name_full = f"new_noise_model_{timestamp}_full_with_fluo_in_noise.pth"
     save_path_full = os.path.join(save_dir, save_name_full)
 
     # Initialize model, loss function, and optimizer
@@ -312,6 +315,8 @@ if __name__ == "__main__":
     # val_signal_skin, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
     train_signal, _ = read_clean_data(clean_dir=train_dir, customized_noise=False, pV=True)
     val_signal, _ = read_clean_data(clean_dir=val_dir, customized_noise=False, pV=True)
+    fluo_train_signal, _ = read_clean_data(clean_dir=fluo_train_dir, customized_noise=False, pV=True)
+    fluo_val_signal, _ = read_clean_data(clean_dir=fluo_val_dir, customized_noise=False, pV=True)
     noise_std_dict = {}
     txt_files = glob.glob(os.path.join(noise_dir, "*.txt"))
     for txt_file in txt_files:
@@ -320,13 +325,13 @@ if __name__ == "__main__":
         noise_std_dict[key] = std
 
     # Create Dataset and DataLoader
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict)
-    train_dataset.generate_noisy_signals(SNR_range=SNR_range)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal)
+    train_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     train_dataset.DCT()
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    val_dataset = RamanNoiseDataset(clean_signals=val_signal, noise_std_list=noise_std_dict)
-    val_dataset.generate_noisy_signals(SNR_range=SNR_range)
+    val_dataset = RamanNoiseDataset(clean_signals=val_signal, noise_std_list=noise_std_dict, fluorescence=fluo_val_signal)
+    val_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     val_dataset.DCT()
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
