@@ -35,8 +35,8 @@ class RamanNoiseDataset(Dataset):
         if self.fluorescence is not None:
             fluorescence_indices = torch.randperm(self.fluorescence.shape[0])
             shuffled_fluorescence = self.fluorescence[fluorescence_indices]
-            for signal, fluorescence_signal in zip(self.clean_signals, shuffled_fluorescence):
-                signal_max, max_pos = get_signal_max(signal)
+            for raman_signal, fluorescence_signal in zip(self.clean_signals, shuffled_fluorescence):
+                signal_max, max_pos = get_signal_max(raman_signal)
                 SNR = np.random.uniform(min_SNR, max_SNR)
                 r2f = np.random.uniform(r2f_range[0], r2f_range[1])
                 int_time, noise_std = random.choice(list(self.noise_std_list.items()))
@@ -56,9 +56,10 @@ class RamanNoiseDataset(Dataset):
                 n = (-B + np.sqrt(disc)) / (2 * A)
                 m = r2f * n * f_max / signal_max
                 
-                signal = signal * m
+                raman_signal = raman_signal * m
                 fluorescence_signal = fluorescence_signal * n
-                noise = torch.normal(0, torch.sqrt(signal + fluorescence_signal + 2 * noise_std))
+                signal = raman_signal + fluorescence_signal
+                noise = torch.normal(0, torch.sqrt(signal + 2 * noise_std))
                 noisy_signal = signal + noise
                 
                 self.noisy_signals.append(noisy_signal)

@@ -54,8 +54,8 @@ def read_noise_data(file_name):
 #     return signal / torch.max(signal, dim=2, keepdim=True)[0]
 
 def reload_train_dataloader():
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict)
-    train_dataset.generate_noisy_signals(SNR_range=SNR_range)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal)
+    train_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     train_dataset.DCT()
     print("-------- Reloaded Dataset ---------")
     return DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -240,15 +240,20 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         avg_val_loss = running_val_loss / len(val_dataloader)
         val_losses.append(avg_val_loss)
         # plot the process
+        outputs_plot = outputs[0, 0, :].detach().cpu().numpy()
+        noisy_signal_dct_norm_plot = noisy_signal_dct_norm[0, 0, :].detach().cpu().numpy()
+        pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
+        gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        
         if epoch % 10 == 0:
             plt.figure()
             plt.subplot(1,2,1)
-            plt.plot(outputs[0, 0, :], label="predicted noise dct")
-            plt.plot(noisy_signal_dct_norm[0, 0, :], label="noisy signal dct")
+            plt.plot(outputs_plot, label="predicted noise dct")
+            plt.plot(noisy_signal_dct_norm_plot, label="noisy signal dct")
             plt.legend()
             plt.subplot(1,2,2)
-            plt.plot(pred_idct[0, 0, :], label="predicted signal")
-            plt.plot(gt_idct[0, 0, :], label="ground truth")
+            plt.plot(pred_idct_plot, label="predicted signal")
+            plt.plot(gt_idct_plot, label="ground truth")
             plt.legend()
             plt.title(f"Epoch {epoch+1}/{num_epochs}")
             plt.savefig(f"tmp/test_epoch_{epoch+1}.jpg")
@@ -278,12 +283,12 @@ if __name__ == "__main__":
     r2f_range = [0.01, 0.5]
 
     # Hyperparameters
-    num_epochs = 200
+    num_epochs = 400
     batch_size = 32
     learning_rate_HF = 2e-5
     learning_rate_MF = 2e-4
     learning_rate_LF = 2e-5
-    learning_rate_full = 2e-4
+    learning_rate_full = 5e-5
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
@@ -293,7 +298,7 @@ if __name__ == "__main__":
     save_path_MF = os.path.join(save_dir, save_name_MF)
     save_name_LF = f"new_noise_model_{timestamp}_LF.pth"
     save_path_LF = os.path.join(save_dir, save_name_LF)
-    save_name_full = f"new_noise_model_{timestamp}_full_with_fluo_in_noise.pth"
+    save_name_full = f"new_noise_model_{timestamp}_full_with_fluo_in_signal.pth"
     save_path_full = os.path.join(save_dir, save_name_full)
 
     # Initialize model, loss function, and optimizer

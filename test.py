@@ -601,7 +601,7 @@ if __name__ == "__main__":
     model_LF = AUnet(1, 1)
     model_LF.load_state_dict(torch.load(model_LF_path))
     model_LF.eval()  # Set the model to evaluation mode
-    model_full_path = "models/pretrained/new_noise_model_05172025_095134_full_with_fluo_in_noise.pth"
+    model_full_path = "models/pretrained/new_noise_model_05182025_140140_full_with_fluo_in_signal.pth"
     model_full = AUnet(1, 1)
     model_full.load_state_dict(torch.load(model_full_path))
     model_full.eval()  # Set the model to evaluation mode
