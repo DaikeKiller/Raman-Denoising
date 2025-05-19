@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from models.Network import RamanNoiseNet, RamanNoiseNet_HF, RamanNoiseNet_LF
-from models.AUnet import AUnet
+# from models.Network import RamanNoiseNet, RamanNoiseNet_HF, RamanNoiseNet_LF
+from models.AUnet import AUnet, Double_AUnet
 from utils.Raman_dataset import RamanNoiseDataset
 import pickle
 import numpy as np
@@ -102,30 +102,30 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch+1}/{num_epochs} Training', unit="batch")
 
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _, _ in progress_bar:
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_signal_dct, _, _, _, _ in progress_bar:
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
+            gt_raman_signal_dct = gt_raman_signal_dct.unsqueeze(1).float().to(device)
             # get the max of the noisy_signal
             max_values = noisy_signal.max(dim=2, keepdim=True)[0]
             noisy_signal_dct_norm = noisy_signal_dct / max_values
             gt_signal_dct_norm = gt_signal_dct / max_values
+            gt_raman_signal_dct_norm = gt_raman_signal_dct / max_values
             # print(device)
-            if clip == "high":
-                noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51+321:]
-                gt_signal_dct_norm = gt_signal_dct_norm[:,:,51+321:]
-            elif clip == "mid":
-                noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51:51+321]
-                gt_signal_dct_norm = gt_signal_dct_norm[:,:,51:51+321]
-            elif clip == "low":
-                noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,:51]
-                gt_signal_dct_norm = gt_signal_dct_norm[:,:,:51]
-            elif clip != "full":
+            # if clip == "high":
+            #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51+321:]
+            #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,51+321:]
+            # elif clip == "mid":
+            #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51:51+321]
+            #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,51:51+321]
+            # elif clip == "low":
+            #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,:51]
+            #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,:51]
+            if clip != "full":
                 Warning("please input a valid string to the param *clip")
-            elif clip is None:
-                noisy_signal_dct_norm = noisy_signal_dct_norm
-                gt_signal_dct_norm = gt_signal_dct_norm
+                
             
             # # center the signal
             # centered = torch.mean(noisy_signal, dim=2, keepdim=True)
@@ -135,7 +135,20 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
             optimizer.zero_grad()  # Zero the gradients
 
-            # Forward pass
+            # # Forward pass
+            # denoise_outputs_dct, raman_outputs_dct = model(noisy_signal_dct_norm)
+            # denoise_outputs = idct_torch(denoise_outputs_dct)
+            # raman_outputs = idct_torch(raman_outputs_dct)
+            
+            # gt_idct = idct_torch(gt_signal_dct_norm)
+            # loss_denoise = criterion(denoise_outputs, gt_idct)
+            
+            # gt_raman_idct = idct_torch(gt_raman_signal_dct_norm)
+            # loss_raman = criterion(raman_outputs, gt_raman_idct)
+            
+            # loss = 1000 * (0.6 * loss_denoise + 0.4 * loss_raman)
+            
+            # Forward pass for Raman only
             outputs = model(noisy_signal_dct_norm)
             pred = noisy_signal_dct_norm - outputs
             pred_idct = idct_torch(pred)
@@ -146,12 +159,7 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             #     dct_loss = criterion(normalization_for_loss(outputs), normalization_for_loss(noise_residual))
             # else:
             #     dct_loss = criterion(outputs, noise_residual)
-            loss_ = criterion(pred_idct, gt_idct)
-
-            # Regularize the mean difference between output and ground truth
-            mean_reg_loss = (pred_idct.mean() - gt_idct.mean()) ** 2
-
-            loss = 1000 * loss_ + 0 * mean_reg_loss
+            loss = 1000 * criterion(pred_idct, gt_idct)
 
             # Backward pass and optimization
             loss.backward()
@@ -163,51 +171,54 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         train_losses.append(avg_train_loss)
         # plot the process
         # Detach tensors and move to cpu for plotting
-        outputs_plot = outputs[0, 0, :].detach().cpu().numpy()
-        noisy_signal_dct_norm_plot = noisy_signal_dct_norm[0, 0, :].detach().cpu().numpy()
-        pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
-        gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        # denoise_outputs_plot = denoise_outputs[0, 0, :].detach().cpu().numpy()
+        # gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        # raman_outputs_plot = raman_outputs[0, 0, :].detach().cpu().numpy()
+        # gt_raman_idct_plot = gt_raman_idct[0, 0, :].detach().cpu().numpy()
 
-        if epoch % 10 == 0:
-            plt.figure()
-            plt.subplot(1,2,1)
-            plt.plot(outputs_plot, label="predicted noise dct")
-            plt.plot(noisy_signal_dct_norm_plot, label="noisy signal dct")
-            plt.legend()
-            plt.subplot(1,2,2)
-            plt.plot(pred_idct_plot, label="predicted signal")
-            plt.plot(gt_idct_plot, label="ground truth")
-            plt.legend()
-            plt.title(f"Epoch {epoch+1}/{num_epochs}")
-            plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
-            plt.close()
+        # if epoch % 10 == 0:
+        #     plt.figure()
+        #     plt.subplot(1,2,1)
+        #     plt.plot(denoise_outputs_plot, label="denoised")
+        #     plt.plot(gt_idct_plot, label="gt")
+        #     plt.legend()
+        #     plt.subplot(1,2,2)
+        #     plt.plot(raman_outputs_plot, label="predicted raman")
+        #     plt.plot(gt_raman_idct_plot, label="gt raman")
+        #     plt.legend()
+        #     plt.title(f"Epoch {epoch+1}/{num_epochs}")
+        #     plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
+        #     plt.close()
             
         # Validation Phase
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
         with torch.no_grad():  # Disable gradient calculation for validation
-            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, _, _, _ in progress_bar:
+            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_signal_dct, _, _, _, _ in progress_bar:
                 # Move data to the appropriate device
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
                 noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
                 gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
+                gt_raman_signal_dct = gt_raman_signal_dct.unsqueeze(1).float().to(device)
                 # get the max of the noisy_signal
                 max_values = noisy_signal.max(dim=2, keepdim=True)[0]
                 noisy_signal_dct_norm = noisy_signal_dct / max_values
                 gt_signal_dct_norm = gt_signal_dct / max_values
+                gt_raman_signal_dct_norm = gt_raman_signal_dct / max_values
                 # print(device)
-                if clip == "high":
-                    noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51+321:]
-                    gt_signal_dct_norm = gt_signal_dct_norm[:,:,51+321:]
-                elif clip == "mid":
-                    noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51:51+321]
-                    gt_signal_dct_norm = gt_signal_dct_norm[:,:,51:51+321]
-                elif clip == "low":
-                    noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,:51]
-                    gt_signal_dct_norm = gt_signal_dct_norm[:,:,:51]
-                elif clip != "full":
+                # if clip == "high":
+                #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51+321:]
+                #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,51+321:]
+                # elif clip == "mid":
+                #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,51:51+321]
+                #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,51:51+321]
+                # elif clip == "low":
+                #     noisy_signal_dct_norm = noisy_signal_dct_norm[:,:,:51]
+                #     gt_signal_dct_norm = gt_signal_dct_norm[:,:,:51]
+                if clip != "full":
                     Warning("please input a valid string to the param *clip")
-            
+                    
+                
                 # # center the signal
                 # centered = torch.mean(noisy_signal, dim=2, keepdim=True)
                 # noisy_signal = noisy_signal - centered
@@ -216,8 +227,20 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
                 optimizer.zero_grad()  # Zero the gradients
 
+                # # Forward pass
+                # denoise_outputs_dct, raman_outputs_dct = model(noisy_signal_dct_norm)
+                # denoise_outputs = idct_torch(denoise_outputs_dct)
+                # raman_outputs = idct_torch(raman_outputs_dct)
                 
-                # Forward pass
+                # gt_idct = idct_torch(gt_signal_dct_norm)
+                # loss_denoise = criterion(denoise_outputs, gt_idct)
+                
+                # gt_raman_idct = idct_torch(gt_raman_signal_dct_norm)
+                # loss_raman = criterion(raman_outputs, gt_raman_idct)
+                
+                # loss = 1000 * (0.6 * loss_denoise + 0.4 * loss_raman)
+                
+                # Forward pass for Raman only
                 outputs = model(noisy_signal_dct_norm)
                 pred = noisy_signal_dct_norm - outputs
                 pred_idct = idct_torch(pred)
@@ -228,36 +251,32 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 #     dct_loss = criterion(normalization_for_loss(outputs), normalization_for_loss(noise_residual))
                 # else:
                 #     dct_loss = criterion(outputs, noise_residual)
-                loss_ = criterion(pred_idct, gt_idct)
-
-                # Regularize the mean difference between output and ground truth
-                mean_reg_loss = (pred_idct.mean() - gt_idct.mean()) ** 2
-
-                loss = 1000 * loss_ + 0 * mean_reg_loss
+                loss = 1000 * criterion(pred_idct, gt_idct)
 
                 running_val_loss += loss.item()
 
         avg_val_loss = running_val_loss / len(val_dataloader)
         val_losses.append(avg_val_loss)
         # plot the process
-        outputs_plot = outputs[0, 0, :].detach().cpu().numpy()
-        noisy_signal_dct_norm_plot = noisy_signal_dct_norm[0, 0, :].detach().cpu().numpy()
-        pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
-        gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
-        
-        if epoch % 10 == 0:
-            plt.figure()
-            plt.subplot(1,2,1)
-            plt.plot(outputs_plot, label="predicted noise dct")
-            plt.plot(noisy_signal_dct_norm_plot, label="noisy signal dct")
-            plt.legend()
-            plt.subplot(1,2,2)
-            plt.plot(pred_idct_plot, label="predicted signal")
-            plt.plot(gt_idct_plot, label="ground truth")
-            plt.legend()
-            plt.title(f"Epoch {epoch+1}/{num_epochs}")
-            plt.savefig(f"tmp/test_epoch_{epoch+1}.jpg")
-            plt.close()
+        # Detach tensors and move to cpu for plotting
+        # denoise_outputs_plot = denoise_outputs[0, 0, :].detach().cpu().numpy()
+        # gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        # raman_outputs_plot = raman_outputs[0, 0, :].detach().cpu().numpy()
+        # gt_raman_idct_plot = gt_raman_idct[0, 0, :].detach().cpu().numpy()
+
+        # if epoch % 10 == 0:
+        #     plt.figure()
+        #     plt.subplot(1,2,1)
+        #     plt.plot(denoise_outputs_plot, label="denoised")
+        #     plt.plot(gt_idct_plot, label="gt")
+        #     plt.legend()
+        #     plt.subplot(1,2,2)
+        #     plt.plot(raman_outputs_plot, label="predicted raman")
+        #     plt.plot(gt_raman_idct_plot, label="gt raman")
+        #     plt.legend()
+        #     plt.title(f"Epoch {epoch+1}/{num_epochs}")
+        #     plt.savefig(f"tmp/val_epoch_{epoch+1}.jpg")
+        #     plt.close()
 
         # Check if this is the best validation loss and save the model
         if avg_val_loss < best_val_loss:
@@ -275,43 +294,24 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     train_dir = "data/generated/pV_new_noise_model_training_05132025_181058.pkl"
-    fluo_train_dir = "data/generated/pV_new_noise_model_train_fluorescence_05172025_083743.pkl"
+    fluo_train_dir = "data/generated/poly_new_noise_model_train_fluorescence_05182025_185627.pkl"
     val_dir = "data/generated/pV_new_noise_model_val_05142025_135815.pkl"
-    fluo_val_dir = "data/generated/pV_new_noise_model_val_fluorescence_05172025_083419.pkl"
+    fluo_val_dir = "data/generated/poly_new_noise_model_val_fluorescence_05182025_185801.pkl"
     noise_dir = "data/noise/std"
     SNR_range = [0.01, 10]
     r2f_range = [0.01, 0.5]
 
     # Hyperparameters
-    num_epochs = 400
+    num_epochs = 200
     batch_size = 32
-    learning_rate_HF = 2e-5
-    learning_rate_MF = 2e-4
-    learning_rate_LF = 2e-5
     learning_rate_full = 5e-5
     save_dir = "models/pretrained/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
-    save_name_HF = f"new_noise_model_{timestamp}_HF.pth"
-    save_path_HF = os.path.join(save_dir, save_name_HF)
-    save_name_MF = f"new_noise_model_{timestamp}_MF.pth"
-    save_path_MF = os.path.join(save_dir, save_name_MF)
-    save_name_LF = f"new_noise_model_{timestamp}_LF.pth"
-    save_path_LF = os.path.join(save_dir, save_name_LF)
     save_name_full = f"new_noise_model_{timestamp}_full_with_fluo_in_signal.pth"
     save_path_full = os.path.join(save_dir, save_name_full)
 
     # Initialize model, loss function, and optimizer
-    # model = RamanNoiseNet()
-    model_HF = AUnet(1, 1)
-    criterion_HF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
-    optimizer_HF = optim.Adam(model_HF.parameters(), lr=learning_rate_HF, weight_decay=0.01)
-    model_MF = AUnet(1, 1)
-    criterion_MF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
-    optimizer_MF = optim.Adam(model_MF.parameters(), lr=learning_rate_MF)
-    model_LF = AUnet(1, 1)
-    criterion_LF = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
-    optimizer_LF = optim.Adam(model_LF.parameters(), lr=learning_rate_LF)
     model_full = AUnet(1, 1)
     criterion_full = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_full = optim.Adam(model_full.parameters(), lr=learning_rate_full)

@@ -204,7 +204,7 @@ def test_model_full(model_full, test_dataloader, device):
     
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_dct, gt_flu_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
@@ -577,31 +577,19 @@ if __name__ == "__main__":
 
     test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
     test_noise_dir = "data/noise/std"
-    fluo_test_dir = "data/generated/pV_new_noise_model_test_fluorescence_05172025_083817.pkl"
+    fluo_test_dir = "data/generated/poly_new_noise_model_test_fluorescence_05182025_185808.pkl"
     # test_dir_skin = "data/generated/generated_skin_spectrum_12302024_163012.pkl"
     # test_noise_dir = "data/noise/processed_new/val_data.pkl"
     
     SNR_range = [0.01, 10]
-    r2f_range = [0.1, 0.5]
+    r2f_range = [0.01, 0.5]
     # SNR_range = [np.log10(a) for a in SNR_range]
 
     save_data_flag = False
     save_path = "./tmp/"
 
     # Load the best trained model
-    model_HF_path = "models/pretrained/new_noise_model_05162025_082615_HF.pth"
-    model_HF = AUnet(1, 1)
-    model_HF.load_state_dict(torch.load(model_HF_path))
-    model_HF.eval()  # Set the model to evaluation mode
-    model_MF_path = "models/pretrained/new_noise_model_05162025_091645_MF.pth"
-    model_MF = AUnet(1, 1)
-    model_MF.load_state_dict(torch.load(model_MF_path))
-    model_HF.eval()  # Set the model to evaluation mode
-    model_LF_path = "models/pretrained/new_noise_model_05162025_093651_LF.pth"
-    model_LF = AUnet(1, 1)
-    model_LF.load_state_dict(torch.load(model_LF_path))
-    model_LF.eval()  # Set the model to evaluation mode
-    model_full_path = "models/pretrained/new_noise_model_05182025_140140_full_with_fluo_in_signal.pth"
+    model_full_path = "models/pretrained/new_noise_model_05182025_195707_full_with_fluo_in_signal.pth"
     model_full = AUnet(1, 1)
     model_full.load_state_dict(torch.load(model_full_path))
     model_full.eval()  # Set the model to evaluation mode

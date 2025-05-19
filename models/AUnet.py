@@ -2,6 +2,28 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def idct_torch(x_dct):
+    """
+    Compute the IDCT type-II of a batched signal using the inverse FFT.
+    """
+    n, c, length = x_dct.size()
+    
+    # Scale the input coefficients
+    x_dct = x_dct.clone()  # Avoid modifying the original tensor
+    x_dct[:, :, 0] *= (2 ** 0.5)  # Scale the first coefficient
+    x_dct *= (length / 2) ** 0.5  # Scale all coefficients
+    
+    # Create the extended symmetric signal
+    x_dct_ext = torch.cat((x_dct, x_dct.flip(dims=[-1])), dim=-1)
+    
+    # Perform inverse FFT
+    x_ifft = torch.fft.irfft(x_dct_ext, n=2 * length, dim=-1)
+    
+    # Extract the original length
+    x_reconstructed = x_ifft[..., :length]
+    
+    return x_reconstructed
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DoubleConv, self).__init__()
@@ -125,9 +147,24 @@ class AUnet(nn.Module):
         out = self.out_conv(dec1)
         return out
 
+
+class Double_AUnet(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(Double_AUnet, self).__init__()
+        
+        self.aunet1 = AUnet(in_channels, out_channels)
+        self.aunet2 = AUnet(in_channels, out_channels)
+
+    def forward(self, x):
+        out1 = self.aunet1(x)
+        next_input = x - out1
+        out2 = self.aunet2(next_input)
+        return next_input, out2
+
 # Example usage
 if __name__ == "__main__":
-    model = AUnet(in_channels=1, out_channels=1)
+    model = Double_AUnet(in_channels=1, out_channels=1)
     x = torch.randn(8, 1, 81)  # Batch size of 8, 1 channel, length 81
-    out = model(x)
+    denoise_out, out = model(x)
+    print(denoise_out.shape)  # Should be (8, 1, 81)
     print(out.shape)  # Should be (8, 1, 81)
