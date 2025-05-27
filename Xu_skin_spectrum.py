@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import pickle
 import time
+from scipy.interpolate import interp1d
 
 class SkinSimulator:
     def __init__(self, basis) -> None:
@@ -34,6 +35,13 @@ class SkinSimulator:
                 self.concentrations[:, i] = self.concentrations[:, i] / factor
         
         self.spectra = self.basis @ self.concentrations
+        original_length = self.spectra.shape[0]
+        target_length = 693
+        x_original = np.linspace(0, 1, original_length)
+        x_target = np.linspace(0, 1, target_length)
+        interp_func = interp1d(x_original, self.spectra, axis=0, kind='linear')
+        self.spectra = interp_func(x_target)
+        self.spectraLength = target_length
         return
     
     def plot(self) -> None:
@@ -54,7 +62,7 @@ class SkinSimulator:
         for i in range(self.componentNum):
             # plt.subplot(self.componentNum, 1, i+1)
             # plt.title(name_list[i])
-            plt.plot(np.linspace(800, 1800, self.spectraLength), self.basis[:,i] + i*1.5, color="black")
+            plt.plot(np.linspace(600, 1790, self.spectraLength), self.basis[:,i] + i*1.5, color="black")
         plt.xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=13)
         plt.title("Biophysical Model Basis", fontsize=16)
         plt.yticks([i*1.5 for i in range(self.componentNum)], labels=name_list, fontsize=15)
@@ -89,7 +97,7 @@ if __name__ == "__main__":
     basis = loadmat("data/basics/basis_calibrated.mat")
     basis = basis["basis"]
     given_concentrations = None
-    num_to_generate = 10000 # if given_concentrations is provided, you can set this to None
+    num_to_generate = 1000 # if given_concentrations is provided, you can set this to None
     save_flag = True
     save_path = None # if this is None, the file will be saved to a default path "data/generated/"
 
