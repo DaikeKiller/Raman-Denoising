@@ -112,7 +112,7 @@ class WaveletModel():
         best_output = best_output[:, np.newaxis, :]
         return torch.from_numpy(best_output).type_as(input_data)
 
-def get_outputs(input_data, input_data_dct, models, plot=False):
+def get_outputs(input_data, input_data_dct, gt, models, plot=False):
     deep_learning_model = models[0]
     compare_models = models[1:]
     out_overall = []
@@ -144,29 +144,42 @@ def get_outputs(input_data, input_data_dct, models, plot=False):
         wvn = loadmat("data/wvn_raw.mat")["wvn"].reshape(-1)
         wvn = wvn[331:]
         model_names = ["DL", "SG", "Wavelet"]
-        # Randomly select 3 indices from dim 0, 3 from dim 1, 1 from dim 2, 1 from dim 3
+        # Randomly select 3 indices from dim 0, 3 from dim 1, 1 from dim 2
         idx0 = random.sample(range(out_overall[0].shape[0]), 3)
         idx1 = random.sample(range(out_overall[0].shape[1]), 3)
         idx2 = random.sample(range(out_overall[0].shape[2]), 1)
         num_models = len(out_overall)
-        fig, axes = plt.subplots(3, 3, figsize=(15, 10))
+        offsets = [2, 0.5, 1, 1.5, 0]  # Noisy, SG, Wavelet, DL, GT (top to bottom)
+        colors = ['gray', 'g', 'b', 'k', "#FFA500"]
+        labels = ['Noisy', 'DL', 'SG', 'Wavelet', 'GT']
+        fig, axes = plt.subplots(3, 3, figsize=(20, 30))
         for i, i0 in enumerate(idx0):
             for j, j1 in enumerate(idx1):
                 ax = axes[i, j]
-                # Plot noisy input
+                # Get original noisy signal and its max for normalization
                 noisy_signal = input_data[i0, j1, idx2[0], :].cpu().numpy()
-                ax.plot(wvn, noisy_signal, label='Noisy', color='gray', alpha=0.6)
-                # Plot each model's output
+                max_val = np.max(noisy_signal)
+                # Plot noisy input (top)
+                ax.plot(wvn, noisy_signal / max_val + offsets[0], label=labels[0], color=colors[0], alpha=0.6)
+                # Plot SG, Wavelet, DL (order: SG, Wavelet, DL)
                 for m, out in enumerate(out_overall):
                     denoised_signal = out[i0, j1, idx2[0], :].cpu().numpy()
-                    ax.plot(wvn, denoised_signal, label=model_names[m])
+                    ax.plot(wvn, denoised_signal / max_val + offsets[m+1], label=labels[m+1], color=colors[m+1])
+                # Plot GT (bottom)
+                gt_signal = gt[i0][j1].cpu().numpy() if hasattr(gt[i0][j1], 'cpu') else gt[i0][j1]
+                ax.plot(wvn, gt_signal / max_val + offsets[4], label=labels[4], color=colors[-1])
+                # Remove y axis label and ticks
+                ax.set_yticks([])
+                ax.set_ylabel('')
                 if i == 0 and j == 0:
                     ax.legend()
-                # ax.set_title(f'Sample [{i0},{j1},0,0]')
                 ax.set_xlabel('Wavenumber (cm$^{-1}$)')
-                ax.set_ylabel('Intensity (a.u.)')
+                ax.tick_params(axis='x', labelsize=18)
+                ax.tick_params(axis='both', labelsize=16)
+                ax.set_xlabel('Wavenumber (cm$^{-1}$)', fontsize=20)
         plt.tight_layout()
         plt.savefig('tmp/denoised_signals_comparison.png')
+        
         
     return out_overall
 
@@ -190,7 +203,7 @@ def get_SNR_improvement(peak_pos, out_signals, raman_max, pairs):
 
 def plot(SNR_improvement, pairs):
     model_names = ["DL", "SG", "Wavelet"]
-    surface_cmaps = ['Reds', 'Greens', 'Blues']
+    surface_cmaps = ['Greens', 'Reds', 'Blues']
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
     xs = np.array([p[0] for p in pairs])
@@ -219,7 +232,7 @@ def plot(SNR_improvement, pairs):
     import plotly.offline as py
 
     model_names = ["DL", "SG", "Wavelet"]
-    colors = ['red', 'green', 'blue']
+    colors = ['green', 'blue', 'black']
 
     fig_plotly = go.Figure()
     for i, snr_impr in enumerate(SNR_improvement):
@@ -265,7 +278,7 @@ if __name__ == "__main__":
     test_noise_dir = "data/noise/std"
     fluo_test_dir = "data/generated/poly_new_noise_model_test_fluorescence_05182025_185808.pkl"
     
-    SNR_range = [0.01, 10]
+    SNR_range = [0.01, 20]
     r2f_range = [0.05, 0.5]
     
     test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
@@ -293,9 +306,10 @@ if __name__ == "__main__":
         pairs = test_dataset.pairs
         peak_pos = test_dataset.max_pos
         raman_max = test_dataset.raman_max
+        gt = test_dataset.gt
 
         # Call the function
-        out_signals = get_outputs(input_data, input_data_dct, models, plot=True)
+        out_signals = get_outputs(input_data, input_data_dct, gt, models, plot=False)
         SNR_improvement = get_SNR_improvement(peak_pos, out_signals, raman_max, pairs)
         
         pairs_all += pairs

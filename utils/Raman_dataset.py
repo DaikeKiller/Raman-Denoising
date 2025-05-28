@@ -121,6 +121,7 @@ class DenoiserTestDataset():
         self.noisy_signals_dct = []
         self.max_pos = []
         self.raman_max = []
+        self.gt = []
     
     def generate_test_signals(self, SNR_range, r2f_range=None, params=None):
         def get_signal_max(signal):
@@ -148,6 +149,7 @@ class DenoiserTestDataset():
             signals_overall = []
             max_pos_overall = []
             raman_max_overall = []
+            gt_overall = []
 
             for i in range(num_pairs):
                 SNR = self.pairs[i][0]
@@ -161,6 +163,7 @@ class DenoiserTestDataset():
                 signals = []
                 max_pos_tmp = []
                 raman_max = []
+                gt_tmp = []
 
                 for raman_signal, fluorescence_signal in zip(clean_selected, fluorescence_selected):
                     signal_max, max_pos = get_signal_max(raman_signal)
@@ -197,16 +200,19 @@ class DenoiserTestDataset():
                     noisy_signals_per_sample = torch.cat(noisy_signals_per_sample, dim=0)
                     signals.append(noisy_signals_per_sample.unsqueeze(0))  # shape (1, num_noise_per_sample, L)
                     max_pos_tmp.append(max_pos)
+                    gt_tmp.append(signal)
 
                 # Stack
                 signals = torch.cat(signals, dim=0)  # shape (1, num_samples)
                 signals_overall.append(signals)
                 max_pos_overall.append(max_pos_tmp)
                 raman_max_overall.append(raman_max)
+                gt_overall.append(gt_tmp)
                 
             self.noisy_signals = torch.stack(signals_overall, dim=0)
             self.max_pos = max_pos_overall  # shape (num_pairs, num_samples)
             self.raman_max = raman_max_overall
+            self.gt = gt_overall
 
             return
         
