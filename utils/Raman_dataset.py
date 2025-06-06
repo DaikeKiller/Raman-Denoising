@@ -19,7 +19,7 @@ def dct_torch(x):
     return torch_dct.dct(x, norm='ortho')
 
 class RamanNoiseDataset(Dataset):
-    def __init__(self, clean_signals, noise_std_list, fluorescence=None):
+    def __init__(self, clean_signals, noise_std_list, fluorescence=None, etaloning=None):
         """
         Initialize dataset.
         :param noisy_signals: List or tensor of noisy signals.
@@ -27,6 +27,10 @@ class RamanNoiseDataset(Dataset):
         """
         self.clean_signals = torch.from_numpy(np.transpose(clean_signals)) # make it (num_spectrum, spectrunm_len)
         self.fluorescence = torch.from_numpy(np.transpose(fluorescence)) if fluorescence is not None else None
+        if etaloning is not None:
+            self.etaloning = torch.from_numpy(etaloning)
+        else:
+            self.etaloning = None
         self.noise_std_list = noise_std_list
         self.SNR = []
         self.noisy_signals = []
@@ -34,8 +38,10 @@ class RamanNoiseDataset(Dataset):
         self.gt_signals = []
         self.gt_raman_signals = []
         self.gt_fluorescence_signals = []
+        # self.etalonings = []
         self.int_times = []
         self.r2f_ranges = []
+        self.gt_signals_eta = []
     
     def generate_noisy_signals(self, SNR_range, r2f_range=None):
         def get_signal_max(signal):
@@ -47,7 +53,9 @@ class RamanNoiseDataset(Dataset):
         min_SNR, max_SNR = SNR_range
         fluorescence_indices = torch.randperm(self.fluorescence.shape[0])
         shuffled_fluorescence = self.fluorescence[fluorescence_indices]
-        for raman_signal, fluorescence_signal in zip(self.clean_signals, shuffled_fluorescence):
+        etaloning_indices = torch.randperm(self.etaloning.shape[0])
+        shuffled_etaloning = self.etaloning[etaloning_indices]
+        for raman_signal, fluorescence_signal, etaloning in zip(self.clean_signals, shuffled_fluorescence, shuffled_etaloning):
             signal_max, max_pos = get_signal_max(raman_signal)
             SNR = np.random.uniform(min_SNR, max_SNR)
             r2f = np.random.uniform(r2f_range[0], r2f_range[1])
@@ -70,14 +78,17 @@ class RamanNoiseDataset(Dataset):
             
             raman_signal = raman_signal * m
             fluorescence_signal = fluorescence_signal * n
+            etaloning_signal = etaloning * fluorescence_signal
             signal = raman_signal + fluorescence_signal
+            signal_with_eta = signal + 5 * etaloning_signal
             noise = torch.normal(0, torch.sqrt(signal + 2 * noise_std))
-            noisy_signal = signal + noise
+            noisy_signal = signal_with_eta + noise
             
             self.noisy_signals.append(noisy_signal)
             self.noises.append(noise)
             self.SNR.append(SNR)
             self.gt_signals.append(signal)
+            self.gt_signals_eta.append(signal_with_eta)
             self.gt_raman_signals.append(raman_signal)
             self.gt_fluorescence_signals.append(fluorescence_signal)
             self.int_times.append(int_time)
@@ -88,11 +99,13 @@ class RamanNoiseDataset(Dataset):
         noisy_signals_tmp = torch.stack(self.noisy_signals).numpy()
         noises_tmp = torch.stack(self.noises).numpy()
         gt_signals_tmp = torch.stack(self.gt_signals).numpy()
+        gt_signals_eta_tmp = torch.stack(self.gt_signals_eta).numpy()
         gt_raman_signals_tmp = torch.stack(self.gt_raman_signals).numpy()
         gt_fluorescence_signals_tmp = torch.stack(self.gt_fluorescence_signals).numpy()
         self.noisy_signals_dct = torch.from_numpy(dct(noisy_signals_tmp, axis=1, norm='ortho'))
         self.noises_dct = torch.from_numpy(dct(noises_tmp, axis=1, norm='ortho'))
         self.gt_signals_dct = torch.from_numpy(dct(gt_signals_tmp, axis=1, norm='ortho'))
+        self.gt_signals_eta_dct = torch.from_numpy(dct(gt_signals_eta_tmp, axis=1, norm='ortho'))
         self.gt_raman_signals_dct = torch.from_numpy(dct(gt_raman_signals_tmp, axis=1, norm='ortho'))
         self.gt_fluorescence_signals_dct = torch.from_numpy(dct(gt_fluorescence_signals_tmp, axis=1, norm='ortho'))
         return
@@ -101,7 +114,7 @@ class RamanNoiseDataset(Dataset):
         return len(self.noisy_signals)
 
     def __getitem__(self, idx):
-        return self.noisy_signals[idx], self.noisy_signals_dct[idx], self.noises_dct[idx], self.gt_signals_dct[idx], \
+        return self.noisy_signals[idx], self.noisy_signals_dct[idx], self.noises_dct[idx], self.gt_signals_dct[idx], self.gt_signals_eta_dct[idx],\
                self.gt_raman_signals_dct[idx], self.gt_fluorescence_signals_dct[idx], self.SNR[idx], self.int_times[idx], self.r2f_ranges[idx]
 
 
@@ -234,8 +247,9 @@ if __name__ == "__main__":
     r2f_range = [0.05, 0.5]
     clean_signals = np.abs(np.random.randn(spectrum_length, num_samples)) # the clean data is generated as shape(spectrum_length, num_samples)
     fluorescence = np.abs(np.random.randn(spectrum_length, num_samples))
+    etaloning = np.abs(np.random.randn(num_samples, spectrum_length))
     noise_std_list = {"0.1s": np.abs(np.random.randn(spectrum_length)), "0.5s": np.abs(np.random.randn(spectrum_length))}
-    dataset = RamanNoiseDataset(clean_signals=clean_signals, noise_std_list=noise_std_list, fluorescence=fluorescence)
+    dataset = RamanNoiseDataset(clean_signals=clean_signals, noise_std_list=noise_std_list, fluorescence=fluorescence, etaloning=etaloning)
     dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     dataset.DCT()
     params = dataset[1]

@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from scipy.signal import resample
 from scipy.fftpack import idct
 import math
+from utils.etaloning_analysis import EtaloningGenerator
 
 
 def read_clean_data(clean_dir, customized_noise=False, pV=False):
@@ -54,7 +55,7 @@ def read_noise_data(file_name):
 #     return signal / torch.max(signal, dim=2, keepdim=True)[0]
 
 def reload_train_dataloader():
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal, etaloning=eta_train_signal)
     train_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     train_dataset.DCT()
     print("-------- Reloaded Dataset ---------")
@@ -207,12 +208,16 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
     best_val_loss = float('inf')
     
     # Load pretrained weights for model.denoiser and freeze its parameters
-    pretrained_path = "models/pretrained/new_noise_model_05202025_083413_full_with_fluo_in_signal.pth"
+    pretrained_path = "models/pretrained/etaloning/denoiser_06032025_141952.pth"
     if hasattr(model, "denoiser"):
         model.denoiser.load_state_dict(torch.load(pretrained_path, map_location=device))
         for param in model.denoiser.parameters():
             param.requires_grad = False
         print("Pretrained weights loaded and parameters frozen for model.denoiser.")
+        
+    eta_gen = EtaloningGenerator()
+    eta_gen.get_etaloning()
+    eta_signal = eta_gen.etaloning
 
     for epoch in range(num_epochs):
         if (epoch) % 1 == 0 and epoch != 0:
@@ -224,17 +229,19 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch+1}/{num_epochs} Training', unit="batch")
 
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_signal_dct, gt_fluo_signal_dct, _, _, _ in progress_bar:
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_signal_eta_dct, gt_raman_signal_dct, gt_fluo_signal_dct, _, _, _ in progress_bar:
             # Move data to the appropriate device
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
             gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
+            gt_signal_eta_dct = gt_signal_eta_dct.unsqueeze(1).float().to(device)
             gt_raman_signal_dct = gt_raman_signal_dct.unsqueeze(1).float().to(device)
             gt_fluo_signal_dct = gt_fluo_signal_dct.unsqueeze(1).float().to(device)
             # get the max of the noisy_signal
             max_values = noisy_signal.max(dim=2, keepdim=True)[0]
             noisy_signal_dct_norm = noisy_signal_dct / max_values
             gt_signal_dct_norm = gt_signal_dct / max_values
+            gt_signal_eta_dct_norm = gt_signal_eta_dct / max_values
             gt_raman_signal_dct_norm = gt_raman_signal_dct / max_values
             gt_fluo_signal_dct_norm = gt_fluo_signal_dct / max_values
             gt_fluo_signal_idct_norm = idct_torch(gt_fluo_signal_dct_norm)
@@ -247,7 +254,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             optimizer.zero_grad()  # Zero the gradients
 
             # -------- Forward pass ------------
-            out = model(noisy_signal_dct_norm)
+            input = torch.cat([noisy_signal_dct_norm, torch.from_numpy(eta_signal).unsqueeze(0).repeat(noisy_signal_dct_norm.shape[0], 1, 1).float().to(device)], dim=1)
+            out = model(input)
             denoise_outputs = out["denoised_signal"]
             fluo_signal = out["poly_raw"]
             fluo_signal_dct = out["poly_dct"]
@@ -266,8 +274,9 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
             # loss = 1000 * (0.3 * loss_raman + 0.7 * loss_raman_dct + 0.5 * loss_coeffs) + 1000 * l2_coeffs
             loss = 1000 * loss_raman + 500 * loss_raman_dct
 
-            # -----------  Forward pass for Raman only ------------
-            # outputs = model(noisy_signal_dct_norm)
+            # -----------  Forward pass for denoiser only ------------
+            # input = torch.cat([noisy_signal_dct_norm, torch.from_numpy(eta_signal).unsqueeze(0).repeat(noisy_signal_dct_norm.shape[0], 1, 1).float().to(device)], dim=1)
+            # outputs = model(input)
             # pred = noisy_signal_dct_norm - outputs
             # pred_idct = idct_torch(pred)
             # gt_idct = idct_torch(gt_signal_dct_norm)
@@ -281,17 +290,21 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
 
         avg_train_loss = running_loss / len(train_dataloader)
         train_losses.append(avg_train_loss)
-        # plot the process
+        #  ==================== plot the process
         # Detach tensors and move to cpu for plotting
         denoise_outputs_plot = denoise_outputs[0, 0, :].detach().cpu().numpy()
         gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        gt_idct_eta_plot = idct_torch(gt_signal_eta_dct_norm)[0, 0, :].detach().cpu().numpy()
         raman_outputs_plot = raman_outputs[0, 0, :].detach().cpu().numpy()
         gt_raman_idct_plot = gt_raman_idct[0, 0, :].detach().cpu().numpy()
+        noisy_signal_plot = idct_torch(noisy_signal_dct_norm)[0, 0, :].detach().cpu().numpy()
 
         if epoch % 5 == 0:
             plt.figure()
             plt.subplot(1,2,1)
-            plt.plot(denoise_outputs_plot, label="denoised")
+            plt.plot(noisy_signal_plot + 3, label="noisy signal")
+            plt.plot(gt_idct_eta_plot + 2, label="gt etaloning")
+            plt.plot(denoise_outputs_plot + 1, label="denoised")
             plt.plot(gt_idct_plot, label="gt")
             plt.legend()
             plt.subplot(1,2,2)
@@ -304,11 +317,16 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         
         # pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
         # gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        # gt_idct_eta_plot = idct_torch(gt_signal_eta_dct_norm)[0, 0, :].detach().cpu().numpy()
+        # noisy_signal_plot = idct_torch(noisy_signal_dct_norm)[0, 0, :].detach().cpu().numpy()
         
         # if epoch % 1 == 0:
         #     plt.figure()
+        #     plt.plot()
         #     plt.plot(pred_idct_plot, label="denoised")
-        #     plt.plot(gt_idct_plot, label="gt")
+        #     plt.plot(gt_idct_plot + 1, label="gt")
+        #     plt.plot(gt_idct_eta_plot + 2, label="gt etaloning")
+        #     plt.plot(noisy_signal_plot + 3, label="noisy signal")
         #     plt.legend()
         #     plt.title(f"Epoch {epoch+1}/{num_epochs}")
         #     plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
@@ -318,17 +336,19 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         model.eval()  # Set the model to evaluation mode
         running_val_loss = 0.0
         with torch.no_grad():  # Disable gradient calculation for validation
-            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_signal_dct, gt_fluo_signal_dct, _, _, _ in progress_bar:
+            for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_signal_eta_dct, gt_raman_signal_dct, gt_fluo_signal_dct, _, _, _ in progress_bar:
                 # Move data to the appropriate device
                 noisy_signal = noisy_signal.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
                 noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)  # Shape: (batch_size, 1, length)
                 gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
+                gt_signal_eta_dct = gt_signal_eta_dct.unsqueeze(1).float().to(device)
                 gt_raman_signal_dct = gt_raman_signal_dct.unsqueeze(1).float().to(device)
                 gt_fluo_signal_dct = gt_fluo_signal_dct.unsqueeze(1).float().to(device)
                 # get the max of the noisy_signal
                 max_values = noisy_signal.max(dim=2, keepdim=True)[0]
                 noisy_signal_dct_norm = noisy_signal_dct / max_values
                 gt_signal_dct_norm = gt_signal_dct / max_values
+                gt_signal_eta_dct_norm = gt_signal_eta_dct / max_values
                 gt_raman_signal_dct_norm = gt_raman_signal_dct / max_values
                 gt_fluo_signal_dct_norm = gt_fluo_signal_dct / max_values
                 gt_fluo_signal_idct_norm = idct_torch(gt_fluo_signal_dct_norm)
@@ -341,7 +361,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 optimizer.zero_grad()  # Zero the gradients
 
                 # -------- Forward pass ------------
-                out = model(noisy_signal_dct_norm)
+                input = torch.cat([noisy_signal_dct_norm, torch.from_numpy(eta_signal).unsqueeze(0).repeat(noisy_signal_dct_norm.shape[0], 1, 1).float().to(device)], dim=1)
+                out = model(input)
                 denoise_outputs = out["denoised_signal"]
                 fluo_signal = out["poly_raw"]
                 fluo_signal_dct = out["poly_dct"]
@@ -361,7 +382,8 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
                 loss = 1000 * loss_raman + 500 * loss_raman_dct
                 
                 # ---------- Forward pass for denoising only ---------------
-                # outputs = model(noisy_signal_dct_norm)
+                # input = torch.cat([noisy_signal_dct_norm, torch.from_numpy(eta_signal).unsqueeze(0).repeat(noisy_signal_dct_norm.shape[0], 1, 1).float().to(device)], dim=1)
+                # outputs = model(input)
                 # pred = noisy_signal_dct_norm - outputs
                 # pred_idct = idct_torch(pred)
                 # gt_idct = idct_torch(gt_signal_dct_norm)
@@ -376,13 +398,17 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         # Detach tensors and move to cpu for plotting
         denoise_outputs_plot = denoise_outputs[0, 0, :].detach().cpu().numpy()
         gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        gt_idct_eta_plot = idct_torch(gt_signal_eta_dct_norm)[0, 0, :].detach().cpu().numpy()
         raman_outputs_plot = raman_outputs[0, 0, :].detach().cpu().numpy()
         gt_raman_idct_plot = gt_raman_idct[0, 0, :].detach().cpu().numpy()
+        noisy_signal_plot = idct_torch(noisy_signal_dct_norm)[0, 0, :].detach().cpu().numpy()
 
         if epoch % 5 == 0:
             plt.figure()
             plt.subplot(1,2,1)
-            plt.plot(denoise_outputs_plot, label="denoised")
+            plt.plot(noisy_signal_plot + 3, label="noisy signal")
+            plt.plot(gt_idct_eta_plot + 2, label="gt etaloning")
+            plt.plot(denoise_outputs_plot + 1, label="denoised")
             plt.plot(gt_idct_plot, label="gt")
             plt.legend()
             plt.subplot(1,2,2)
@@ -395,14 +421,19 @@ def train_model(model, train_dataloader, val_dataloader, criterion, optimizer, n
         
         # pred_idct_plot = pred_idct[0, 0, :].detach().cpu().numpy()
         # gt_idct_plot = gt_idct[0, 0, :].detach().cpu().numpy()
+        # noisy_signal_plot = idct_torch(noisy_signal_dct_norm)[0, 0, :].detach().cpu().numpy()
+        # gt_idct_eta_plot = idct_torch(gt_signal_eta_dct_norm)[0, 0, :].detach().cpu().numpy()
         
         # if epoch % 1 == 0:
         #     plt.figure()
+        #     plt.plot()
         #     plt.plot(pred_idct_plot, label="denoised")
-        #     plt.plot(gt_idct_plot, label="gt")
+        #     plt.plot(gt_idct_plot + 1, label="gt")
+        #     plt.plot(gt_idct_eta_plot + 2, label="gt etaloning")
+        #     plt.plot(noisy_signal_plot + 3, label="noisy signal")
         #     plt.legend()
         #     plt.title(f"Epoch {epoch+1}/{num_epochs}")
-        #     plt.savefig(f"tmp/training_epoch_{epoch+1}.jpg")
+        #     plt.savefig(f"tmp/val_epoch_{epoch+1}.jpg")
         #     plt.close()
 
         # Check if this is the best validation loss and save the model
@@ -424,8 +455,11 @@ if __name__ == "__main__":
     fluo_train_dir = "data/generated/poly_new_noise_model_train_fluorescence_05182025_185627.pkl"
     val_dir = "data/generated/pV_new_noise_model_val_05142025_135815.pkl"
     fluo_val_dir = "data/generated/poly_new_noise_model_val_fluorescence_05182025_185801.pkl"
+    eta_train_dir = "data/generated/etaloning/etalonings_20250603_114059_train.pkl"
+    eta_val_dir = "data/generated/etaloning/etalonings_20250603_114151_val.pkl"
+    
     noise_dir = "data/noise/std"
-    SNR_range = [0.01, 10]
+    SNR_range = [0.1, 10]
     r2f_range = [0.05, 0.5]
     signal_length = 693
 
@@ -433,24 +467,25 @@ if __name__ == "__main__":
     num_epochs = 200
     batch_size = 32
     learning_rate_full = 2e-5
-    save_dir = "models/pretrained/"
+    save_dir = "models/pretrained/etaloning/"
     timestamp = time.strftime("%m%d%Y_%H%M%S")
 
-    save_name_full = f"new_noise_model_{timestamp}_end_to_end_wvn_domain.pth"
+    save_name_full = f"end_to_end_{timestamp}.pth"
     save_path_full = os.path.join(save_dir, save_name_full)
 
     # Initialize model, loss function, and optimizer
     model_full = TwoStageModel()
-    # model_full = AUnet(1, 1)
+    # model_full = AUnet(2, 1)
     criterion_full = nn.MSELoss()  # Mean Squared Error Loss for regression tasks
     optimizer_full = optim.Adam(model_full.parameters(), lr=learning_rate_full)
     
-    # train_signal_skin, _, train_concentrations = read_clean_data(clean_dir=train_dir, customized_noise=False)
-    # val_signal_skin, _, val_concentrations = read_clean_data(clean_dir=val_dir, customized_noise=False)
+    # Load clean data and noise data
     train_signal, _ = read_clean_data(clean_dir=train_dir, customized_noise=False, pV=True)
     val_signal, _ = read_clean_data(clean_dir=val_dir, customized_noise=False, pV=True)
     fluo_train_signal, _ = read_clean_data(clean_dir=fluo_train_dir, customized_noise=False, pV=True)
     fluo_val_signal, _ = read_clean_data(clean_dir=fluo_val_dir, customized_noise=False, pV=True)
+    eta_train_signal, _ = read_clean_data(clean_dir=eta_train_dir, customized_noise=False, pV=True)
+    eta_val_signal, _ = read_clean_data(clean_dir=eta_val_dir, customized_noise=False, pV=True)
     noise_std_dict = {}
     txt_files = glob.glob(os.path.join(noise_dir, "*.txt"))
     for txt_file in txt_files:
@@ -459,46 +494,18 @@ if __name__ == "__main__":
         noise_std_dict[key] = std
 
     # Create Dataset and DataLoader
-    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal)
+    train_dataset = RamanNoiseDataset(clean_signals=train_signal, noise_std_list=noise_std_dict, fluorescence=fluo_train_signal, etaloning=eta_train_signal)
     train_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     train_dataset.DCT()
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    val_dataset = RamanNoiseDataset(clean_signals=val_signal, noise_std_list=noise_std_dict, fluorescence=fluo_val_signal)
+    val_dataset = RamanNoiseDataset(clean_signals=val_signal, noise_std_list=noise_std_dict, fluorescence=fluo_val_signal, etaloning=eta_val_signal)
     val_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     val_dataset.DCT()
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # Train the model
-    # train_loss_HF, val_loss_HF = train_model(model_HF, train_dataloader, val_dataloader, criterion_HF, optimizer_HF, 50, device, save_path_HF, clip="high")
-    # train_loss_MF, val_loss_MF = train_model(model_MF, train_dataloader, val_dataloader, criterion_MF, optimizer_MF, 20, device, save_path_MF, clip="mid")
-    # train_loss_LF, val_loss_LF = train_model(model_LF, train_dataloader, val_dataloader, criterion_LF, optimizer_LF, num_epochs, device, save_path_LF, clip="low")
     train_loss_full, val_loss_full = train_model(model_full, train_dataloader, val_dataloader, criterion_full, optimizer_full, num_epochs, device, save_path_full, clip=None)
-
-    # plt.figure
-    # plt.subplot(3,1,1)
-    # plt.plot(range(num_epochs), train_loss_HF)
-    # plt.plot(range(num_epochs), val_loss_HF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("High Frequency")
-    # plt.subplot(3,1,2)
-    # plt.plot(range(num_epochs), train_loss_MF)
-    # plt.plot(range(num_epochs), val_loss_MF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("Mid Frequency")
-    # plt.subplot(3,1,3)
-    # plt.plot(range(400), train_loss_LF)
-    # plt.plot(range(400), val_loss_LF)
-    # plt.legend(["train loss", "validation loss"])
-    # plt.xlabel("epoch")
-    # plt.ylabel("loss")
-    # plt.title("Low Frequency")
-    # plt.show()
-    # plt.savefig("results/training_loss.jpg")
     
     plt.figure
     plt.plot(range(num_epochs), train_loss_full)

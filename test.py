@@ -95,100 +95,6 @@ def soft_low_pass_filter_dct(dct_signal, cutoff=1031, transition_width=50):
     return filtered_dct_signal
 
 # Function to test the model and clean the signals
-def test_model(model_HF, model_MF, model_LF, test_dataloader, device):
-    model_HF.to(device)
-    model_HF.eval()  # Set the model to evaluation mode
-    model_MF.to(device)
-    model_MF.eval()  # Set the model to evaluation mode
-    model_LF.to(device)
-    model_LF.eval()  # Set the model to evaluation mode
-    
-    predicted_noises = []
-    cleaned_signals = []
-    noisy_signals = []
-    true_noises = []
-    gt_signals = []
-    SNR_list = []
-    int_time_list = []
-    r2f_list = []
-    
-    with torch.no_grad():  # Disable gradient calculation for testing
-        # Progress bar for testing phase
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
-
-            noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
-            noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
-            gt_signal_dct = gt_signal_dct.unsqueeze(1).float().to(device)
-            # get the max of the noisy_signal
-            max_values = noisy_signal.max(dim=2, keepdim=True)[0]
-            noisy_signal_dct_norm = noisy_signal_dct / max_values
-            # true_noise_np = true_noise.squeeze(1).cpu().numpy()
-            # gt_signal = target_signal.squeeze(1).cpu().numpy()
-            # noisy_signal_np = noisy_signal.squeeze(1).cpu().numpy()
-
-            noisy_signal_dct_norm_HF = noisy_signal_dct_norm[:, :, 51+321:]
-            noisy_signal_dct_norm_MF = noisy_signal_dct_norm[:, :, 51:51+321]
-            noisy_signal_dct_norm_LF = noisy_signal_dct_norm[:, :, :51]
-
-            # HF_center_factor = torch.mean(noisy_signal_HF, dim=2, keepdim=True)
-            # MF_center_factor = torch.mean(noisy_signal_MF, dim=2, keepdim=True)
-            # LF_center_factor = torch.mean(noisy_signal_LF, dim=2, keepdim=True)
-            # noisy_signal_HF = noisy_signal_HF - HF_center_factor
-            # noisy_signal_MF = noisy_signal_MF - MF_center_factor
-            # noisy_signal_LF = noisy_signal_LF - LF_center_factor
-
-            predicted_noise_dct_HF = model_HF(noisy_signal_dct_norm_HF).squeeze(1).cpu().numpy()
-            predicted_noise_dct_MF = model_MF(noisy_signal_dct_norm_MF).squeeze(1).cpu().numpy()
-            predicted_noise_dct_LF = model_LF(noisy_signal_dct_norm_LF).squeeze(1).cpu().numpy()
-
-            predicted_noise_dct = np.concatenate((predicted_noise_dct_LF, predicted_noise_dct_MF, predicted_noise_dct_HF), axis=1) * max_values.squeeze(1).cpu().numpy()
-            # predicted_noise[:,:50] = true_noise_np[:,:50] # !!!!!test******
-
-            predicted_noise = idct(predicted_noise_dct, type=2, norm='ortho', axis=1)
-            
-            # Subtract predicted noise from noisy signal to clean the signal
-            cleaned_signal_dct = noisy_signal_dct.squeeze(1).cpu().numpy() - predicted_noise_dct
-            cleaned_signal = noisy_signal.squeeze(1).cpu().numpy() - predicted_noise
-            # remove_num = 5 # to deal with zero-point spike
-            # cleaned_signal[:,:remove_num] = cleaned_signal[:,remove_num:remove_num*2]
-
-            # cleaned_signal = als_baseline_correction(cleaned_signal, lam=1e8, p=0.001, n_iter=10)
-            # cleaned_signal = rolling_ball_baseline(cleaned_signal, window_size=200)
-            # cleaned_signal = bilateral_cdf(cleaned_signal)
-            # cleaned_signal[:,0] = cleaned_signal[:,1]
-
-            # cleaned_signal[cleaned_signal < 0.05] = 0
-
-            true_noise_dct = noisy_signal_dct.squeeze(1).cpu().numpy() - gt_signal_dct.squeeze(1).cpu().numpy()
-            true_noise = idct(true_noise_dct, type=2, norm='ortho', axis=1)
-            gt_signal = idct(gt_signal_dct.squeeze(1).cpu().numpy(), type=2, norm='ortho', axis=1)
-            
-            # Store the results
-            predicted_noises.append(predicted_noise)
-            cleaned_signals.append(cleaned_signal)
-            noisy_signals.append(noisy_signal.squeeze(1).cpu().numpy())
-            true_noises.append(true_noise)
-            gt_signals.append(gt_signal)
-            SNR_list.append(SNR)
-            int_time_list.append(int_time)
-            r2f_list.append(r2f)
-
-        # Concatenate results into numpy arrays
-        predicted_noises = np.concatenate(predicted_noises, axis=0)
-        cleaned_signals = np.concatenate(cleaned_signals, axis=0)
-        noisy_signals = np.concatenate(noisy_signals, axis=0)
-        true_noises = np.concatenate(true_noises, axis=0)
-        gt_signals = np.concatenate(gt_signals, axis=0)
-        SNR_list = np.concatenate(SNR_list, axis=0)
-        int_times = np.concatenate(int_time_list, axis=0)
-        r2fs = np.concatenate(r2f_list, axis=0)
-
-
-        # cleaned_signals = cleaned_signals / np.max(cleaned_signals, axis=1).reshape(-1, 1)
-    
-    return predicted_noises, cleaned_signals, noisy_signals, true_noises, gt_signals, SNR_list, int_times, r2fs
-
-# Function to test the model and clean the signals
 def test_model_full(model_full, test_dataloader, device):
     model_full.to(device)
     model_full.eval()  # Set the model to evaluation mode
@@ -206,7 +112,7 @@ def test_model_full(model_full, test_dataloader, device):
     
     with torch.no_grad():  # Disable gradient calculation for testing
         # Progress bar for testing phase
-        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_raman_dct, gt_flu_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
+        for noisy_signal, noisy_signal_dct, _, gt_signal_dct, gt_eta_dct, gt_raman_dct, gt_flu_dct, SNR, int_time, r2f in tqdm(test_dataloader, desc="Testing", unit="batch"):
 
             noisy_signal = noisy_signal.unsqueeze(1).float().to(device)
             noisy_signal_dct = noisy_signal_dct.unsqueeze(1).float().to(device)
@@ -216,7 +122,11 @@ def test_model_full(model_full, test_dataloader, device):
             noisy_signal_dct_norm = noisy_signal_dct / max_values
             gt_signal_dct_norm = gt_signal_dct / max_values
 
-            out = model_full(noisy_signal_dct_norm)
+            eta_gen = EtaloningGenerator()
+            eta_gen.get_etaloning()
+            eta_signal = eta_gen.etaloning
+            input = torch.cat([noisy_signal_dct_norm, torch.from_numpy(eta_signal).unsqueeze(0).repeat(noisy_signal_dct_norm.shape[0], 1, 1).float().to(device)], dim=1)
+            out = model_full(input)
             
             denoised_signal = out["denoised_signal"].squeeze(1).cpu().numpy() * max_values.squeeze(1).cpu().numpy()
             raman_signal = out["raman_signal"].squeeze(1).cpu().numpy() * max_values.squeeze(1).cpu().numpy()
@@ -432,10 +342,11 @@ def plot_signals(output, num_samples=5, save_path="./tmp/"):
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
-    test_dir = "data/generated/generated_skin_spectrum_05262025_131135.pkl"
+    test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
+    # test_dir = "data/generated/generated_skin_spectrum_05262025_131135.pkl"
     test_noise_dir = "data/noise/std"
     fluo_test_dir = "data/generated/poly_new_noise_model_test_fluorescence_05182025_185808.pkl"
+    eta_test_dir = "data/generated/etaloning/etalonings_20250603_114157_test.pkl"
     
     SNR_range = [0.01, 10]
     r2f_range = [0.05, 0.5]
@@ -445,7 +356,7 @@ if __name__ == "__main__":
     save_path = "./tmp/"
 
     # Load the best trained model
-    model_full_path = "models/pretrained/new_noise_model_05202025_211748_end_to_end_wvn_domain.pth"
+    model_full_path = "models/pretrained/etaloning/end_to_end_06032025_153912.pth"
     # model_full_path = "models/pretrained/new_noise_model_05202025_151616_end_to_end.pth"
     model_full = TwoStageModel()
     model_full.load_state_dict(torch.load(model_full_path))
@@ -457,9 +368,10 @@ if __name__ == "__main__":
     #     model_full.denoiser.load_state_dict(torch.load(denoiser_weight_path))
 
     # Load test data
-    # test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
-    test_signal, _, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=False)
+    test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
+    # test_signal, _, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=False)
     fluo_test_signal, _ = read_clean_data(clean_dir=fluo_test_dir, customized_noise=False, pV=True)
+    eta_test_signal, _ = read_clean_data(clean_dir=eta_test_dir, customized_noise=False, pV=True)
     
     noise_std_dict = {}
     txt_files = glob.glob(os.path.join(test_noise_dir, "*.txt"))
@@ -469,7 +381,7 @@ if __name__ == "__main__":
         noise_std_dict[key] = std
 
     # Create Dataset and DataLoader
-    test_dataset = RamanNoiseDataset(clean_signals=test_signal, noise_std_list=noise_std_dict, fluorescence=fluo_test_signal)
+    test_dataset = RamanNoiseDataset(clean_signals=test_signal, noise_std_list=noise_std_dict, fluorescence=fluo_test_signal, etaloning=eta_test_signal)
     test_dataset.generate_noisy_signals(SNR_range=SNR_range, r2f_range=r2f_range)
     test_dataset.DCT()  # Apply DCT on the test data
     test_dataloader = DataLoader(test_dataset, batch_size=1000, shuffle=False)

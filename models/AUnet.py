@@ -300,14 +300,14 @@ class PolyRegressor(nn.Module):
 class TwoStageModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.denoiser = AUnet(1, 1)
+        self.denoiser = AUnet(2, 1)
         # self.regressor = PolyRegressor(signal_length=signal_length, poly_order=poly_order)
         self.raman_learner = AUnet(2, 1)
 
     def forward(self, x_dct):
         # Stage 1: denoise
         noise_dct = self.denoiser(x_dct)
-        denoised_dct = x_dct - noise_dct # (B,1,L)
+        denoised_dct = x_dct[:, 0, :].unsqueeze(1) - noise_dct # (B,1,L)
         denoised = idct_torch(denoised_dct)            # (B,1,L)
 
         # # Stage 2: estimate polynomial
