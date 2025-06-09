@@ -342,8 +342,8 @@ def plot_signals(output, num_samples=5, save_path="./tmp/"):
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
-    # test_dir = "data/generated/generated_skin_spectrum_05262025_131135.pkl"
+    # test_dir = "data/generated/pV_new_noise_model_test_05132025_181123.pkl"
+    test_dir = "data/generated/generated_skin_spectrum_05262025_131135.pkl"
     test_noise_dir = "data/noise/std"
     fluo_test_dir = "data/generated/poly_new_noise_model_test_fluorescence_05182025_185808.pkl"
     eta_test_dir = "data/generated/etaloning/etalonings_20250603_114157_test.pkl"
@@ -368,8 +368,8 @@ if __name__ == "__main__":
     #     model_full.denoiser.load_state_dict(torch.load(denoiser_weight_path))
 
     # Load test data
-    test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
-    # test_signal, _, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=False)
+    # test_signal, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=True)
+    test_signal, _, _ = read_clean_data(clean_dir=test_dir, customized_noise=False, pV=False)
     fluo_test_signal, _ = read_clean_data(clean_dir=fluo_test_dir, customized_noise=False, pV=True)
     eta_test_signal, _ = read_clean_data(clean_dir=eta_test_dir, customized_noise=False, pV=True)
     
