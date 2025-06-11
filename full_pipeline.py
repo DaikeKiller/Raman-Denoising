@@ -4,7 +4,7 @@ import random
 from scipy.interpolate import interp1d
 from scipy.ndimage import uniform_filter1d, gaussian_filter1d
 import cv2
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 import os
 import numpy as np
 import random
@@ -218,6 +218,7 @@ def main():
     data_processed = pre_processing(data, dark, NIST_out)
     
     model_out = use_dl_model(model, data_processed, NIST_out["eta_signal"])
+    savemat("results/model_out.mat", model_out)
     plot(model_out)
     
 
